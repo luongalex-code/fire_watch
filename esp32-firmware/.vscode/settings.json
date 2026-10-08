@@ -1,0 +1,8 @@
+{
+    "idf.currentSetup": "C:\\esp\\v5.5.5\\esp-idf",
+    "terminal.integrated.env.windows": {
+        "IDF_TARGET": "esp32s3"
+    },
+    "idf.flashType": "UART",
+    "idf.port": "COM5"
+}

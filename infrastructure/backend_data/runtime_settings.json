@@ -1,0 +1,18 @@
+{
+  "aiConfidenceFireThreshold": 0.5,
+  "aiConfidenceSmokeThreshold": 0.5,
+  "aiConsecutiveFrames": 3,
+  "aiCooldownSeconds": 5,
+  "aiModelName": "YOLOv8-FireSmoke v2.1",
+  "checksumSha256": "7879e17953959f0d",
+  "dhtSamplingPeriodMs": 2000,
+  "flameClearThresholdAdc": 3000,
+  "flameTriggerThresholdAdc": 2500,
+  "hardwareInterlockMode": "manual_override",
+  "isDirty": false,
+  "isNvsSynced": true,
+  "mq2PreheatSec": 20,
+  "pumpCycleOffMs": 1000,
+  "pumpCycleOnMs": 300,
+  "pumpMaxDurationSec": 30
+}

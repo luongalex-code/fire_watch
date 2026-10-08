@@ -1,0 +1,90 @@
+name: iot_fire_watch
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: iot_fire_watch_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fire_monitoring
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      TZ: Asia/Bangkok
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./infrastructure/postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fire_monitoring"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  emqx:
+    image: emqx/emqx:latest
+    container_name: iot_fire_watch_emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    environment:
+      EMQX_DASHBOARD__DEFAULT_USERNAME: admin
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: public
+    volumes:
+      - ./infrastructure/emqx/data:/opt/emqx/data
+      - ./infrastructure/emqx/log:/opt/emqx/log
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: iot_fire_watch_backend:latest
+    container_name: iot_fire_watch_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgrespassword@postgres:5432/fire_monitoring
+      API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+      MQTT_HOST: emqx
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ""
+      MQTT_PASSWORD: ""
+      MQTT_CLIENT_ID: iot-fire-watch-backend
+      MQTT_TOPIC_PREFIX: fire
+      ESP32_DEVICE_CODE: esp32-s3-01
+      AUTO_PUMP_ON_AI_FIRE: "false"
+      DUAL_CONFIRMED_PUMP_ENABLED: "true"
+      DUAL_CONFIRMED_PUMP_COOLDOWN_SECONDS: "30"
+      PIPER_TTS_ENABLED: "true"
+      PIPER_TTS_EXECUTABLE: "piper"
+      PIPER_TTS_MODEL_PATH: "/data/voices/vi_VN-vais1000-medium.onnx"
+      PIPER_TTS_LENGTH_SCALE: "1.15"
+      PIPER_TTS_SENTENCE_SILENCE: "0.6"
+      PIPER_TTS_CACHE_DIR: "/data/tts_cache"
+      FIRE_SETTINGS_PATH: /data/runtime_settings.json
+      TZ: Asia/Bangkok
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./infrastructure/backend_data:/data
+      - ./data/voices:/data/voices:ro
+
+  frontend:
+    build:
+      context: ./fe
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_CAMERA_STREAM_URL: http://localhost:8090/stream
+    image: iot_fire_watch_frontend:latest
+    container_name: iot_fire_watch_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3000:80"

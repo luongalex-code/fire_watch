@@ -1,0 +1,5 @@
+ultralytics
+opencv-python
+requests
+paho-mqtt
+python-dotenv

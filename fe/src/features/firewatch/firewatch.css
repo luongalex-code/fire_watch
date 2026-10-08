@@ -1,0 +1,9 @@
+/* FireWatch scoped stylesheets */
+.firewatch-app {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.firewatch-app * {
+  box-sizing: border-box;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "FireWatch - Hệ thống giám sát hỗ trợ chữa cháy",
+  "description": "Thiết kế và xây dựng hệ thống giám sát hỗ trợ chữa cháy công nghiệp, tích hợp thị giác máy tính YOLOv8 AI và vi điều khiển ESP32-S3 IoT telemetry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
