@@ -1,4 +1,4 @@
-﻿export type AreaId = 'zone_1' | 'zone_2' | 'zone_3';
+export type AreaId = 'zone_1' | 'zone_2' | 'zone_3';
 
 export interface Area {
   id: AreaId;
@@ -130,10 +130,24 @@ export interface SystemSettings {
   flameTriggerThresholdAdc: number; // 2500 (lower means trigger)
   flameClearThresholdAdc: number; // 3000
   dhtSamplingPeriodMs: number;
+  pumpStartDelayMs: number;
+  pumpStopDelayMs: number;
   pumpCycleOnMs: number; // 2000ms
   pumpCycleOffMs: number; // 1000ms
   pumpMaxDurationSec: number;
   hardwareInterlockMode: 'hardware_enforced' | 'manual_override' | 'estop';
+  
+  ttsInitialMessage: string;
+  ttsInitialRepeatCount: number;
+  ttsRepeatDelayMs: number;
+  ttsFireRepeatMessage: string;
+  ttsPersonDetectedMessage: string;
+  ttsPersonRepeatMessage: string;
+  ttsInitialEnabled: boolean;
+  ttsFireRepeatEnabled: boolean;
+  ttsPersonDetectedEnabled: boolean;
+  ttsPersonRepeatEnabled: boolean;
+
   checksumSha256: string;
   deviceConfigQueued?: boolean;
 }

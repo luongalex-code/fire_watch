@@ -27,7 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Cảm biến',
     path: 'sensors',
     iconName: 'Radio',
-    description: 'Telemetry ESP32-S3: DHT22, Flame ADC va MQ-2 ADC thô',
+    description: 'Telemetry ESP32-S3: DHT22, Flame ADC thô',
   },
   {
     id: 'alerts',

@@ -146,7 +146,6 @@ export const AlertDetailPage: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               <Metric label="Flame ADC" value={currentAlert.sensorSnapshot.flameAdc ?? '-'} tone="red" />
-              <Metric label="MQ-2 ADC" value={currentAlert.sensorSnapshot.mq2Adc ?? '-'} tone="amber" />
               <Metric label="Nhiệt độ" value={currentAlert.sensorSnapshot.temp !== null ? `${currentAlert.sensorSnapshot.temp} C` : '-'} tone="slate" />
               <Metric label="Độ ẩm" value={currentAlert.sensorSnapshot.humidity !== null ? `${currentAlert.sensorSnapshot.humidity} %` : '-'} tone="slate" />
             </div>

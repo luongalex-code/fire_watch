@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Bell, Power, Sliders, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { ActuatorCard } from './ActuatorCard';
 import { useFireWatch } from '../../hooks/useFireWatch';
 
 interface DeviceControlWidgetProps {
@@ -69,144 +70,64 @@ export const DeviceControlWidget: React.FC<DeviceControlWidgetProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 text-xs">
-        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-bold text-slate-900">
-              <Power className="w-4 h-4 text-red-600" />
-              Bơm chữa cháy - relay GPIO16
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Trạng thái ESP32 báo về: <strong>{stateText(latestReading?.pumpRelayState, isStale)}</strong>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'Bơm chữa cháy',
-                  16,
-                  'pump:on',
-                  'Gửi yêu cầu bật bơm',
-                  'Lenh se gửi qua backend/MQTT den ESP32. Trạng thái chi duoc xác nhận khi ESP32 phan hoi ACK.',
-                  true
-                )
-              }
-              className="px-2.5 py-1 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50"
-            >
-              ON
-            </button>
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'Bơm chữa cháy',
-                  16,
-                  'pump:off',
-                  'Gửi yêu cầu tat bom',
-                  'Lenh tat bom khong dong nghia điều kiện cảnh báo da het.',
-                  true
-                )
-              }
-              className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded disabled:opacity-50"
-            >
-              OFF
-            </button>
-          </div>
-        </div>
-
-        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-bold text-slate-900">
-              <Bell className="w-4 h-4 text-red-600" />
-              Còi báo động GPIO7
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Trạng thái ESP32 báo về: <strong>{stateText(latestReading?.buzzerState, isStale)}</strong>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'buzzer',
-                  7,
-                  'buzzer:on',
-                  'Gửi yêu cầu bat coi',
-                  'Lenh thu cong rieng qua backend/MQTT. Firmware van co the điều khiển coi theo trang thai chua chay.',
-                  true
-                )
-              }
-              className="px-2.5 py-1 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50"
-            >
-              ON
-            </button>
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'buzzer',
-                  7,
-                  'buzzer:off',
-                  'Gửi yêu cầu tat coi',
-                  'Tiếp nhận hoặc tat coi khong lam het điều kiện cảnh báo.',
-                  false
-                )
-              }
-              className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded disabled:opacity-50"
-            >
-              OFF
-            </button>
-          </div>
-        </div>
-
-        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-bold text-slate-900">
-              <Zap className="w-4 h-4 text-amber-500" />
-              Đèn cảnh báo GPIO2
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Trạng thái ESP32 báo về: <strong>{stateText(latestReading?.ledState, isStale)}</strong>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'led',
-                  2,
-                  'led:on',
-                  'Gửi yêu cầu bat den',
-                  'Lenh thu cong rieng qua backend/MQTT. Trạng thái chi xác nhận khi ESP32 ACK va telemetry bao lai.',
-                  true
-                )
-              }
-              className="px-2.5 py-1 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded disabled:opacity-50"
-            >
-              ON
-            </button>
-            <button
-              disabled={isOffline}
-              onClick={() =>
-                handleActionClick(
-                  'led',
-                  2,
-                  'led:off',
-                  'Gửi yêu cầu tat den',
-                  'Tat den khong lam het điều kiện cảnh báo va khong anh huong luong tu dong.',
-                  false
-                )
-              }
-              className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded disabled:opacity-50"
-            >
-              OFF
-            </button>
-          </div>
-        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <ActuatorCard
+          id="pump"
+          name="Bơm chữa cháy"
+          gpio={16}
+          icon={<Power className="w-5 h-5 text-red-600" />}
+          currentState={latestReading?.pumpRelayState ?? null}
+          isStale={isStale}
+          isOffline={isOffline}
+          onCommand="pump:on"
+          offCommand="pump:off"
+          onLabel="Bật bơm"
+          offLabel="Tắt bơm"
+          descOn="Lệnh sẽ được gửi qua backend/MQTT đến ESP32. Relay ON không chứng minh bơm có nước."
+          descOff="Lệnh tắt bơm không đồng nghĩa điều kiện cảnh báo đã hết."
+          colorScheme="red"
+          lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
+          onActionClick={handleActionClick}
+          pendingTarget={pendingAction?.target === 'Bơm chữa cháy' ? 'pump' : null}
+        />
+        <ActuatorCard
+          id="buzzer"
+          name="Còi báo động"
+          gpio={7}
+          icon={<Bell className="w-5 h-5 text-red-600" />}
+          currentState={latestReading?.buzzerState ?? null}
+          isStale={isStale}
+          isOffline={isOffline}
+          onCommand="buzzer:on"
+          offCommand="buzzer:off"
+          onLabel="Bật còi"
+          offLabel="Tắt còi"
+          descOn="Lệnh thủ công qua backend/MQTT. Còi vẫn có thể bị điều khiển tự động bởi trạng thái cháy."
+          descOff="Tiếp nhận hoặc tắt còi không làm mất đi trạng thái cháy."
+          colorScheme="red"
+          lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
+          onActionClick={handleActionClick}
+          pendingTarget={pendingAction?.target === 'buzzer' ? 'buzzer' : null}
+        />
+        <ActuatorCard
+          id="led"
+          name="Đèn cảnh báo"
+          gpio={2}
+          icon={<Zap className="w-5 h-5 text-amber-500" />}
+          currentState={latestReading?.ledState ?? null}
+          isStale={isStale}
+          isOffline={isOffline}
+          onCommand="led:on"
+          offCommand="led:off"
+          onLabel="Bật đèn"
+          offLabel="Tắt đèn"
+          descOn="Lệnh thủ công. Trạng thái chỉ xác nhận khi ESP32 ACK."
+          descOff="Tắt đèn không làm mất cảnh báo và không ảnh hưởng luồng tự động."
+          colorScheme="amber"
+          lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
+          onActionClick={handleActionClick}
+          pendingTarget={pendingAction?.target === 'led' ? 'led' : null}
+        />
       </div>
 
       <div className="rounded bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-800">

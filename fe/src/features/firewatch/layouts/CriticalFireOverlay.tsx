@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Bell,
@@ -70,6 +70,14 @@ export const CriticalFireOverlay: React.FC = () => {
   } = useFireWatch();
 
   const [isAcknowledging, setIsAcknowledging] = useState(false);
+  const [ttsSettings, setTtsSettings] = useState<any>(null);
+
+  useEffect(() => {
+    import('../services').then(({ fireWatchService }) => {
+      fireWatchService.getSettings().then(setTtsSettings).catch(console.error);
+    });
+  }, []);
+
   const [ttsError, setTtsError] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsRequestTokenRef = useRef(0);
@@ -249,8 +257,16 @@ export const CriticalFireOverlay: React.FC = () => {
     void playNextTts();
   }, [playNextTts]);
 
+  const renderTtsTemplate = useCallback((template: string, session: TtsSession, snapshot: TtsSnapshot) => {
+    let result = template;
+    result = result.replace(/{areaName}/g, session.areaName);
+    result = result.replace(/{personCount}/g, snapshot.personCount.toString());
+    return result;
+  }, []);
+
   const scheduleTtsRepeat = useCallback(() => {
     clearTtsTimer();
+    const delayMs = ttsSettings?.ttsRepeatDelayMs ?? (Math.max(0.1, TTS_REPEAT_DELAY_SECONDS) * 1000);
     ttsTimerRef.current = window.setTimeout(() => {
       const snapshot = getTtsSnapshot();
       const session = ttsSessionRef.current;
@@ -259,21 +275,25 @@ export const CriticalFireOverlay: React.FC = () => {
         return;
       }
 
-      enqueueTts({
-        type: 'fire-repeat',
-        text: `Cảnh báo cháy tại ${session.areaName}.`,
-        alertId: session.alertId,
-      });
-
-      if (snapshot.personDetected) {
+      if (ttsSettings?.ttsFireRepeatEnabled ?? true) {
         enqueueTts({
-          type: 'person-repeat',
-          text: `Phát hiện ${snapshot.personCount} người tại ${session.areaName}.`,
+          type: 'fire-repeat',
+          text: renderTtsTemplate(ttsSettings?.ttsFireRepeatMessage || `Cảnh báo cháy tại {areaName}.`, session, snapshot),
           alertId: session.alertId,
         });
       }
-    }, Math.max(0.1, TTS_REPEAT_DELAY_SECONDS) * 1000);
-  }, [clearTtsTimer, enqueueTts, getTtsSnapshot, stopTtsCompletely]);
+
+      if (snapshot.personDetected) {
+        if (ttsSettings?.ttsPersonRepeatEnabled ?? true) {
+          enqueueTts({
+            type: 'person-repeat',
+            text: renderTtsTemplate(ttsSettings?.ttsPersonRepeatMessage || `Phát hiện {personCount} người tại {areaName}.`, session, snapshot),
+            alertId: session.alertId,
+          });
+        }
+      }
+    }, delayMs);
+  }, [clearTtsTimer, enqueueTts, getTtsSnapshot, stopTtsCompletely, ttsSettings, renderTtsTemplate]);
 
   scheduleRepeatRef.current = scheduleTtsRepeat;
 
@@ -298,8 +318,13 @@ export const CriticalFireOverlay: React.FC = () => {
           fireWasActive: true,
         };
         const session = ttsSessionRef.current;
-        const fireMessage = `Chú ý, chú ý. Cảnh báo cháy tại ${session.areaName}.`;
-        enqueueTts({ type: 'fire-initial', text: `${fireMessage} ${fireMessage}`, alertId: session.alertId }, true);
+        if (ttsSettings?.ttsInitialEnabled ?? true) {
+          const rawMessage = ttsSettings?.ttsInitialMessage || `Chú ý, chú ý. Cảnh báo cháy tại {areaName}.`;
+          const fireMessage = renderTtsTemplate(rawMessage, session, snapshot);
+          const repeatCount = ttsSettings?.ttsInitialRepeatCount ?? 2;
+          const fullMessage = Array(repeatCount).fill(fireMessage).join(' ');
+          enqueueTts({ type: 'fire-initial', text: fullMessage, alertId: session.alertId }, true);
+        }
         return;
       }
 
@@ -308,15 +333,17 @@ export const CriticalFireOverlay: React.FC = () => {
     }
 
     if (snapshot.fireActive && !previous.personDetected && snapshot.personDetected && ttsSessionRef.current) {
-      enqueueTts({
-        type: 'person-detected',
-        text: `Phát hiện ${snapshot.personCount} người tại ${ttsSessionRef.current.areaName}.`,
-        alertId: ttsSessionRef.current.alertId,
-      });
+      if (ttsSettings?.ttsPersonDetectedEnabled ?? true) {
+        enqueueTts({
+          type: 'person-detected',
+          text: renderTtsTemplate(ttsSettings?.ttsPersonDetectedMessage || `Phát hiện {personCount} người tại {areaName}.`, ttsSessionRef.current, snapshot),
+          alertId: ttsSessionRef.current.alertId,
+        });
+      }
     }
 
 
-  }, [enqueueTts, getTtsSnapshot, sanitizeTtsQueue, stopTtsCompletely]);
+  }, [enqueueTts, getTtsSnapshot, sanitizeTtsQueue, stopTtsCompletely, ttsSettings, renderTtsTemplate]);
 
   useEffect(() => {
     return () => {
@@ -371,7 +398,7 @@ export const CriticalFireOverlay: React.FC = () => {
     return `${Number(value).toFixed(suffix ? 1 : 0)}${suffix}`;
   };
   const flameAdc = hasFreshEsp32Reading ? latestReading?.flameAdc : null;
-  const mq2Adc = hasFreshEsp32Reading ? latestReading?.mq2Adc : null;
+
   const temperature = hasFreshEsp32Reading ? latestReading?.temperatureC : null;
   const humidity = hasFreshEsp32Reading ? latestReading?.humidityPercent : null;
   const pumpActive = hasFreshEsp32Reading && latestReading?.pumpRelayState === true;
@@ -447,7 +474,7 @@ export const CriticalFireOverlay: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <Metric label="Flame ADC" value={formatMetric(flameAdc)} tone="red" />
-                <Metric label="MQ-2 ADC" value={formatMetric(mq2Adc)} tone="amber" />
+
                 <Metric label="Nhiệt độ" value={formatMetric(temperature, ' C')} tone="slate" />
                 <Metric label="Độ ẩm" value={formatMetric(humidity, ' %')} tone="slate" />
               </div>

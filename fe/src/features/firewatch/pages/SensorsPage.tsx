@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFireWatch } from '../hooks/useFireWatch';
 import { SensorCards } from '../components/sensors/SensorCard';
 import { TelemetryDualAxisChart } from '../components/charts/TelemetryDualAxisChart';
@@ -25,13 +25,12 @@ export const SensorsPage: React.FC = () => {
   }, [currentAreaId, filterPeriod]);
 
   const handleExportCsv = () => {
-    const headers = ['Thời gian', 'Nhiệt độ (°C)', 'Độ ẩm (%RH)', 'Flame ADC (GPIO6)', 'MQ-2 ADC (GPIO5)'];
+    const headers = ['Thời gian', 'Nhiệt độ (°C)', 'Độ ẩm (%RH)', 'Flame ADC (GPIO6)'];
     const rows = historyData.map((d) => [
       d.time,
       d.temp ?? '',
       d.humidity ?? '',
       d.flameAdc ?? '',
-      d.mq2Adc ?? '',
     ]);
     exportToCsv(`Telemetry_ESP32_${currentAreaId}_${Date.now()}.csv`, headers, rows);
   };
@@ -79,16 +78,6 @@ export const SensorsPage: React.FC = () => {
         </span>
       ),
     },
-    {
-      key: 'mq2Adc',
-      header: 'MQ-2 Gas ADC (GPIO5)',
-      width: '20%',
-      render: (item) => (
-        <span className="font-mono text-slate-800 font-semibold">
-          {item.mq2Adc !== null ? `${item.mq2Adc.toLocaleString()} ADC` : 'Không có số đo'}
-        </span>
-      ),
-    },
   ];
 
   return (
@@ -104,7 +93,7 @@ export const SensorsPage: React.FC = () => {
               GIÁM SÁT CẢM BIẾN MÔI TRƯỜNG & TELEMETRY HIỆN TRƯỜNG
             </h2>
             <p className="text-xs text-slate-500">
-              Giao thuc 1-Wire & ADC1 ESP32-S3: DHT22 (GPIO3), Flame quang hoc (GPIO6), MQ-2 (GPIO5)
+              Giao thuc 1-Wire & ADC1 ESP32-S3: DHT22 (GPIO3), Flame quang hoc (GPIO6)
             </p>
           </div>
         </div>
@@ -139,21 +128,13 @@ export const SensorsPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-900 mb-1">Cảm biến Lua Flame</div>
                 <div className="text-[11px] font-mono text-slate-600 space-y-0.5">
                   <div>Kenh: <strong>ADC1_CH5 (GPIO6)</strong></div>
                   <div>Ngưỡng bao chay: <strong>&lt; 2,500 ADC</strong></div>
                   <div>Chu ky xac thuc: <strong>3 lan lien tiep</strong></div>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
-                <div className="font-bold text-slate-900 mb-1">Cảm biến Khoi MQ-2</div>
-                <div className="text-[11px] font-mono text-slate-600 space-y-0.5">
-                  <div>Kenh: <strong>ADC1_CH4 (GPIO5)</strong></div>
-                  <div>Thang do: <strong>0 - 4095 ADC Tho</strong></div>
                 </div>
               </div>
 
@@ -165,10 +146,6 @@ export const SensorsPage: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="mt-3 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
-            <strong>Ghi chu:</strong> MQ-2 chi luu ADC thô do ESP32 gửi len. Hệ thống không quy đổi thành nồng độ khí.
           </div>
         </div>
       </div>

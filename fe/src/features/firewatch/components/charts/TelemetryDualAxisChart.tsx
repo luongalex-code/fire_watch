@@ -25,8 +25,7 @@ const latestNonEmpty = (data: TelemetryHistoryPoint[]) => {
   return [...data].reverse().find((item) =>
     item.temp !== null ||
     item.humidity !== null ||
-    item.flameAdc !== null ||
-    item.mq2Adc !== null
+    item.flameAdc !== null
   );
 };
 
@@ -56,7 +55,7 @@ export const TelemetryDualAxisChart: React.FC<TelemetryDualAxisChartProps> = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             <div className="rounded-lg border border-red-100 bg-red-50 p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-red-700">Nhiệt độ DHT22</div>
               <div className="mt-1 text-xl font-black font-mono text-red-700">{formatValue(latest?.temp, '°C')}</div>
@@ -68,10 +67,6 @@ export const TelemetryDualAxisChart: React.FC<TelemetryDualAxisChartProps> = ({
             <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
               <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Flame ADC GPIO6</div>
               <div className="mt-1 text-xl font-black font-mono text-amber-800">{formatValue(latest?.flameAdc, ' ADC', 0)}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-700">MQ-2 ADC GPIO5</div>
-              <div className="mt-1 text-xl font-black font-mono text-slate-900">{formatValue(latest?.mq2Adc, ' ADC', 0)}</div>
             </div>
           </div>
 
@@ -104,13 +99,10 @@ export const TelemetryDualAxisChart: React.FC<TelemetryDualAxisChartProps> = ({
 
           <div className="pt-3 border-t border-slate-100">
             <div className="flex items-center justify-between gap-3 mb-2 px-1">
-              <div className="text-xs font-bold text-slate-800">Flame & MQ-2 ADC thô</div>
+              <div className="text-xs font-bold text-slate-800">Flame ADC thô</div>
               <div className="flex items-center gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1.5 text-red-600">
                   <span className="w-3 h-0.5 bg-red-600 inline-block" /> Flame ADC
-                </span>
-                <span className="flex items-center gap-1.5 text-slate-800">
-                  <span className="w-3 h-0.5 bg-slate-900 inline-block" /> MQ-2 ADC
                 </span>
               </div>
             </div>
@@ -133,7 +125,6 @@ export const TelemetryDualAxisChart: React.FC<TelemetryDualAxisChartProps> = ({
                     }}
                   />
                   <Line type="monotone" dataKey="flameAdc" name="Flame ADC" stroke="#dc2626" strokeWidth={2.5} dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="mq2Adc" name="MQ-2 ADC" stroke="#0f172a" strokeWidth={2} dot={false} connectNulls={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

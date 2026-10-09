@@ -53,6 +53,10 @@ async def acknowledge_alert(alert_id: int, payload: AlertUpdateIn, db: Session =
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 
+    if alert.status == "acknowledged":
+        area = db.get(Area, alert.area_id)
+        return _alert_payload(alert, area)
+
     alert.status = "acknowledged"
     alert.acknowledged_by = payload.user_id
     alert.acknowledged_at = datetime.now(timezone.utc)
@@ -79,6 +83,6 @@ async def acknowledge_alert(alert_id: int, payload: AlertUpdateIn, db: Session =
     db.commit()
     db.refresh(alert)
     area = db.get(Area, alert.area_id)
-    payload = _alert_payload(alert, area)
-    await websocket_manager.broadcast("alert_updated", payload)
-    return payload
+    payload_resp = _alert_payload(alert, area)
+    await websocket_manager.broadcast("alert_updated", payload_resp)
+    return payload_resp

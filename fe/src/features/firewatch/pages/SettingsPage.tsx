@@ -20,7 +20,7 @@ export const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'sensors' | 'actuators' | 'interlock'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'sensors' | 'actuators' | 'interlock' | 'tts'>('ai');
 
   useEffect(() => {
     fireWatchService.getSettings().then(setSettings).catch((error: Error) => {
@@ -84,6 +84,25 @@ export const SettingsPage: React.FC = () => {
       aiConfidenceSmokeThreshold: 0.5,
       aiConsecutiveFrames: 5,
       aiCooldownSeconds: 5,
+      flameTriggerThresholdAdc: 1850,
+      flameClearThresholdAdc: 2500,
+      dhtSamplingPeriodMs: 2000,
+      pumpStartDelayMs: 300,
+      pumpStopDelayMs: 3000,
+      pumpCycleOnMs: 300,
+      pumpCycleOffMs: 3000,
+      pumpMaxDurationSec: 30,
+      hardwareInterlockMode: 'manual_override',
+      ttsInitialMessage: 'Chú ý, chú ý. Cảnh báo cháy tại {areaName}.',
+      ttsInitialRepeatCount: 2,
+      ttsRepeatDelayMs: 2000,
+      ttsFireRepeatMessage: 'Cảnh báo cháy tại {areaName}.',
+      ttsPersonDetectedMessage: 'Phát hiện {personCount} người tại {areaName}.',
+      ttsPersonRepeatMessage: 'Phát hiện {personCount} người tại {areaName}.',
+      ttsInitialEnabled: true,
+      ttsFireRepeatEnabled: true,
+      ttsPersonDetectedEnabled: true,
+      ttsPersonRepeatEnabled: true,
     });
   };
 
@@ -172,6 +191,16 @@ export const SettingsPage: React.FC = () => {
           }`}
         >
           4. Luong xác nhận & điều khiển
+        </button>
+        <button
+          onClick={() => setActiveTab('tts')}
+          className={`px-4 py-2.5 border-b-2 transition ${
+            activeTab === 'tts'
+              ? 'border-slate-900 text-slate-900 font-bold'
+              : 'border-transparent hover:text-slate-900'
+          }`}
+        >
+          5. Kịch bản thông báo
         </button>
       </div>
 
@@ -272,18 +301,33 @@ export const SettingsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
-              <div className="text-xs font-bold text-slate-900">Cảm biến Lua Flame (GPIO6)</div>
-              <div className="text-xs text-slate-600">Ngưỡng kich hoat bao dong (Trigger ADC):</div>
-              <input
-                type="number"
-                value={settings.flameTriggerThresholdAdc}
-                onChange={(e) =>
-                  updateSettings({ ...settings, flameTriggerThresholdAdc: parseInt(e.target.value, 10) })
-                }
-                className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
-              />
+              <div className="text-xs font-bold text-slate-900">Cảm biến Lửa Flame (GPIO6)</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="block text-slate-600 mb-1">Ngưỡng phát hiện lửa (ADC):</label>
+                  <input
+                    type="number"
+                    value={settings.flameTriggerThresholdAdc}
+                    onChange={(e) =>
+                      updateSettings({ ...settings, flameTriggerThresholdAdc: parseInt(e.target.value, 10) })
+                    }
+                    className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 mb-1">Ngưỡng xác nhận hết lửa (ADC):</label>
+                  <input
+                    type="number"
+                    value={settings.flameClearThresholdAdc}
+                    onChange={(e) =>
+                      updateSettings({ ...settings, flameClearThresholdAdc: parseInt(e.target.value, 10) })
+                    }
+                    className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                  />
+                </div>
+              </div>
               <div className="text-[10px] text-slate-500">
-                Tin hieu nghich dao: &lt; 2,500 ADC kich hoat bao dong.
+                Tín hiệu nghịch đảo: ADC &lt;= Ngưỡng phát hiện thì báo cháy. ADC &gt;= Ngưỡng hết lửa thì hết cháy.
               </div>
             </div>
 
@@ -387,6 +431,31 @@ export const SettingsPage: React.FC = () => {
               <div className="text-[11px] text-slate-700">
                 Lenh bom/coi di qua backend va MQTT. Chi xem la da nhan khi ESP32 gửi ACK về backend.
               </div>
+              
+              <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Delay bật bơm (ms):</label>
+                  <input
+                    type="number"
+                    value={settings.pumpStartDelayMs}
+                    onChange={(e) =>
+                      updateSettings({ ...settings, pumpStartDelayMs: parseInt(e.target.value, 10) })
+                    }
+                    className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Delay tắt bơm (ms):</label>
+                  <input
+                    type="number"
+                    value={settings.pumpStopDelayMs}
+                    onChange={(e) =>
+                      updateSettings({ ...settings, pumpStopDelayMs: parseInt(e.target.value, 10) })
+                    }
+                    className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/60 space-y-1">
@@ -411,6 +480,119 @@ export const SettingsPage: React.FC = () => {
             : <span className="text-emerald-400 font-bold">Da luu tren backend</span>}
         </div>
       </div>
+      {/* Tab 5: TTS Settings */}
+      {activeTab === 'tts' && (
+        <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-4">
+          <div className="flex flex-col space-y-4">
+            <div className="text-xs text-slate-500 mb-2">
+              <strong>Placeholder hỗ trợ:</strong> {'{areaName}'}, {'{personCount}'}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Initial Fire */}
+              <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-900">Cảnh báo cháy ban đầu</div>
+                  <input
+                    type="checkbox"
+                    checked={settings.ttsInitialEnabled}
+                    onChange={(e) => updateSettings({ ...settings, ttsInitialEnabled: e.target.checked })}
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={settings.ttsInitialMessage}
+                  disabled={!settings.ttsInitialEnabled}
+                  onChange={(e) => updateSettings({ ...settings, ttsInitialMessage: e.target.value })}
+                  className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
+                />
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">Số lần lặp:</label>
+                    <input
+                      type="number"
+                      min="1" max="10"
+                      value={settings.ttsInitialRepeatCount}
+                      disabled={!settings.ttsInitialEnabled}
+                      onChange={(e) => updateSettings({ ...settings, ttsInitialRepeatCount: parseInt(e.target.value, 10) })}
+                      className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">Khoảng nghỉ lặp lại (ms):</label>
+                    <input
+                      type="number"
+                      min="0" max="60000"
+                      value={settings.ttsRepeatDelayMs}
+                      onChange={(e) => updateSettings({ ...settings, ttsRepeatDelayMs: parseInt(e.target.value, 10) })}
+                      className="w-full text-xs font-mono p-1.5 rounded border border-slate-300 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Repeat Fire */}
+              <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại khi cháy</div>
+                  <input
+                    type="checkbox"
+                    checked={settings.ttsFireRepeatEnabled}
+                    onChange={(e) => updateSettings({ ...settings, ttsFireRepeatEnabled: e.target.checked })}
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={settings.ttsFireRepeatMessage}
+                  disabled={!settings.ttsFireRepeatEnabled}
+                  onChange={(e) => updateSettings({ ...settings, ttsFireRepeatMessage: e.target.value })}
+                  className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
+                />
+              </div>
+
+              {/* Initial Person */}
+              <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-900">Khi mới phát hiện người</div>
+                  <input
+                    type="checkbox"
+                    checked={settings.ttsPersonDetectedEnabled}
+                    onChange={(e) => updateSettings({ ...settings, ttsPersonDetectedEnabled: e.target.checked })}
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={settings.ttsPersonDetectedMessage}
+                  disabled={!settings.ttsPersonDetectedEnabled}
+                  onChange={(e) => updateSettings({ ...settings, ttsPersonDetectedMessage: e.target.value })}
+                  className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
+                />
+              </div>
+
+              {/* Repeat Person */}
+              <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại có người</div>
+                  <input
+                    type="checkbox"
+                    checked={settings.ttsPersonRepeatEnabled}
+                    onChange={(e) => updateSettings({ ...settings, ttsPersonRepeatEnabled: e.target.checked })}
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={settings.ttsPersonRepeatMessage}
+                  disabled={!settings.ttsPersonRepeatEnabled}
+                  onChange={(e) => updateSettings({ ...settings, ttsPersonRepeatMessage: e.target.value })}
+                  className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
+                />
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

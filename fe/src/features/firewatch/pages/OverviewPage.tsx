@@ -135,7 +135,7 @@ export const OverviewPage: React.FC = () => {
             <span className="text-xs text-slate-500">thiết bị online</span>
           </div>
           <div className="text-[10px] font-mono text-slate-400 mt-2">
-            Cảm biến lửa, DHT22, MQ-2, relay bom/coi/LED
+            Cảm biến lửa, DHT22, relay bom/coi/LED
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from typing import Any
@@ -29,13 +29,25 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "aiConfidenceSmokeThreshold": 0.50,
     "aiConsecutiveFrames": 5,
     "aiCooldownSeconds": 5,
-    "flameTriggerThresholdAdc": 2500,
-    "flameClearThresholdAdc": 3000,
+    "flameTriggerThresholdAdc": 1850,
+    "flameClearThresholdAdc": 2500,
     "dhtSamplingPeriodMs": 2000,
+    "pumpStartDelayMs": 300,
+    "pumpStopDelayMs": 3000,
     "pumpCycleOnMs": 300,
     "pumpCycleOffMs": 3000,
     "pumpMaxDurationSec": 30,
     "hardwareInterlockMode": "manual_override",
+    "ttsInitialMessage": "Chú ý, chú ý. Cảnh báo cháy tại {areaName}.",
+    "ttsInitialRepeatCount": 2,
+    "ttsRepeatDelayMs": 2000,
+    "ttsFireRepeatMessage": "Cảnh báo cháy tại {areaName}.",
+    "ttsPersonDetectedMessage": "Phát hiện {personCount} người tại {areaName}.",
+    "ttsPersonRepeatMessage": "Phát hiện {personCount} người tại {areaName}.",
+    "ttsInitialEnabled": True,
+    "ttsFireRepeatEnabled": True,
+    "ttsPersonDetectedEnabled": True,
+    "ttsPersonRepeatEnabled": True,
 }
 
 
@@ -63,11 +75,15 @@ def _validate_runtime_settings(payload: dict[str, Any]) -> None:
         "flameTriggerThresholdAdc": (0, 4095),
         "flameClearThresholdAdc": (0, 4095),
         "dhtSamplingPeriodMs": (2000, 60000),
+        "pumpStartDelayMs": (0, 60000),
+        "pumpStopDelayMs": (0, 60000),
         "pumpCycleOnMs": (0, 60000),
         "pumpCycleOffMs": (0, 60000),
         "pumpMaxDurationSec": (0, 3600),
         "aiConsecutiveFrames": (1, 60),
         "aiCooldownSeconds": (0, 3600),
+        "ttsInitialRepeatCount": (1, 10),
+        "ttsRepeatDelayMs": (0, 60000),
     }
     for key, (minimum, maximum) in integer_ranges.items():
         value = payload[key]
@@ -78,6 +94,17 @@ def _validate_runtime_settings(payload: dict[str, Any]) -> None:
         value = payload[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
             raise ValueError(f"{key} must be a number between 0 and 1")
+
+    for key in ("ttsInitialEnabled", "ttsFireRepeatEnabled", "ttsPersonDetectedEnabled", "ttsPersonRepeatEnabled"):
+        if not isinstance(payload[key], bool):
+            raise ValueError(f"{key} must be a boolean")
+
+    for key in ("ttsInitialMessage", "ttsFireRepeatMessage", "ttsPersonDetectedMessage", "ttsPersonRepeatMessage"):
+        if not isinstance(payload[key], str) or not payload[key].strip():
+            raise ValueError(f"{key} must be a non-empty string")
+
+    if payload["flameTriggerThresholdAdc"] >= payload["flameClearThresholdAdc"]:
+        raise ValueError("flameTriggerThresholdAdc must be less than flameClearThresholdAdc")
 
     if not isinstance(payload["aiModelName"], str) or not payload["aiModelName"].strip():
         raise ValueError("aiModelName must be a non-empty string")
@@ -327,6 +354,10 @@ def save_settings_payload(settings: dict[str, Any], db: Session = Depends(get_db
             "checksum": saved["checksumSha256"],
             "config": {
                 "dht_sampling_period_ms": saved["dhtSamplingPeriodMs"],
+                "flame_on_threshold": saved["flameTriggerThresholdAdc"],
+                "flame_off_threshold": saved["flameClearThresholdAdc"],
+                "pump_start_delay_ms": saved["pumpStartDelayMs"],
+                "pump_stop_delay_ms": saved["pumpStopDelayMs"],
             },
         }
     )

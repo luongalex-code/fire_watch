@@ -169,7 +169,7 @@
 -kernel net_ticktime 60
 -env ERL_CRASH_DUMP_BYTES 104857600
 -env ERL_CRASH_DUMP_SECONDS 30
--env ERL_CRASH_DUMP /opt/emqx/log/erl_crash.2026.10.08.03.23.21.dump
+-env ERL_CRASH_DUMP /opt/emqx/log/erl_crash.2026.10.09.03.00.24.dump
 +e 262144
 +zdbbl 8192
 -kernel inet_dist_listen_options "[{buffer,1048576}]"
@@ -178,5 +178,5 @@
 +S 12:12
 +P 2097152
 +Q 1048576
--name emqx@172.19.0.2
--mnesia dir '"/opt/emqx/data/mnesia/emqx@172.19.0.2"'
+-name emqx@172.19.0.3
+-mnesia dir '"/opt/emqx/data/mnesia/emqx@172.19.0.3"'

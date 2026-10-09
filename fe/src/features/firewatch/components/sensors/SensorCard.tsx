@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Droplets, Flame, Power, Siren, Thermometer, Wind, Zap } from 'lucide-react';
 import { SensorReading } from '../../types';
 
@@ -85,20 +85,6 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ reading, isStale = fal
         </div>
       </div>
 
-      <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-        <div className="flex items-center justify-between text-xs mb-1.5">
-          <span className="flex items-center gap-1.5 font-bold text-slate-800">
-            <Wind className="w-4 h-4 text-slate-600" />
-            MQ-2 GPIO5 ADC thô
-          </span>
-          <span className="font-mono font-bold text-slate-900 text-sm">
-            {hasReading ? valueOrEmpty(reading?.mq2Adc, ' ADC') : 'Chưa có dữ liệu'}
-          </span>
-        </div>
-        <div className="text-[11px] text-slate-600">
-          Chỉ lưu ADC thô, không quy đổi thành nồng độ khí.
-        </div>
-      </div>
 
       <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="rounded border border-slate-200 bg-slate-50 p-2">

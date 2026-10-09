@@ -9,6 +9,7 @@ from app.models.area import Area
 from app.models.command import Command
 from app.models.device import Device
 from app.models.telemetry import Telemetry
+from app.models.audit_log import AuditLog
 from app.models.vision_detection import VisionDetection
 from app.schemas.commands import CommandIn
 from app.schemas.telemetry import TelemetryIn
@@ -287,6 +288,24 @@ def create_command(db: Session, payload: CommandIn) -> tuple[Command, Device]:
     db.add(command)
     db.commit()
     db.refresh(command)
+    
+    try:
+        db.add(AuditLog(
+            action="command_created",
+            entity_type="command",
+            entity_id=command.command_uuid,
+            change_details={
+                "level": "INFO",
+                "message": f"Yêu cầu lệnh {payload.action} cho {payload.target}",
+                "command_uuid": command.command_uuid,
+                "target": payload.target,
+                "action": payload.action,
+            }
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
     return command, device
 
 
@@ -295,6 +314,24 @@ def mark_command_sent(db: Session, command: Command) -> Command:
     command.sent_at = utcnow()
     db.commit()
     db.refresh(command)
+    
+    try:
+        db.add(AuditLog(
+            action="mqtt_command_sent",
+            entity_type="command",
+            entity_id=command.command_uuid,
+            change_details={
+                "level": "INFO",
+                "message": f"Đã gửi lệnh tới thiết bị qua MQTT",
+                "command_uuid": command.command_uuid,
+                "target": command.target,
+                "action": command.action,
+            }
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
     return command
 
 
@@ -308,6 +345,25 @@ def acknowledge_command(db: Session, command_uuid: str, payload: dict) -> Comman
     command.ack_payload = payload
     db.commit()
     db.refresh(command)
+
+    try:
+        db.add(AuditLog(
+            action="command_acknowledged",
+            entity_type="command",
+            entity_id=command.command_uuid,
+            change_details={
+                "level": "INFO",
+                "message": f"Thiết bị đã nhận và phản hồi lệnh",
+                "command_uuid": command.command_uuid,
+                "target": command.target,
+                "action": command.action,
+                "ack_payload": payload,
+            }
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
     return command
 
 

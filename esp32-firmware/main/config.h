@@ -24,14 +24,6 @@
 // FLAME
 // =========================
 
-// Giá trị bạn đã đo:
-// Không lửa ~ 4095
-// Có lửa mạnh ~ 100 - 200
-
-#define FLAME_ON_THRESHOLD   1850
-#define FLAME_OFF_THRESHOLD  2500
-
-#define FIRE_CONFIRM_COUNT   (PUMP_START_DELAY_MS / SENSOR_LOOP_MS)
 #define FIRE_CLEAR_COUNT     5
 
 // =========================
@@ -44,7 +36,6 @@
 // =========================
 // BUZZER
 // =========================
-
 
 #define BUZZER_ON  1
 #define BUZZER_OFF 0
@@ -59,9 +50,6 @@
 #define DHT_READ_INTERVAL_MAX_MS 60000
 
 #define LED_BLINK_MS          250
-
-#define PUMP_START_DELAY_MS   300
-#define PUMP_STOP_DELAY_MS    3000
 
 // =========================
 // WIFI / MQTT

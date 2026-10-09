@@ -26,6 +26,22 @@
 
 #include "config.h"
 
+typedef struct {
+    int flame_on_threshold;
+    int flame_off_threshold;
+    uint32_t pump_start_delay_ms;
+    uint32_t pump_stop_delay_ms;
+} runtime_config_t;
+
+static runtime_config_t runtime_config = {
+    .flame_on_threshold = 1850,
+    .flame_off_threshold = 2500,
+    .pump_start_delay_ms = 300,
+    .pump_stop_delay_ms = 3000,
+};
+
+static int64_t fire_condition_start_ms = 0;
+
 
 static const char *TAG = "SMART_FIRE";
 
@@ -123,58 +139,40 @@ static void load_runtime_config(void)
     }
 
     uint32_t configured_interval_ms = DHT_READ_INTERVAL_MS;
-    result = nvs_get_u32(handle, "dht_interval_ms", &configured_interval_ms);
+    if (nvs_get_u32(handle, "dht_interval_ms", &configured_interval_ms) == ESP_OK) {
+        if (configured_interval_ms >= DHT_READ_INTERVAL_MIN_MS && configured_interval_ms <= DHT_READ_INTERVAL_MAX_MS) {
+            dht_read_interval_ms = configured_interval_ms;
+        }
+    }
+
+    int32_t val;
+    if (nvs_get_i32(handle, "flame_on", &val) == ESP_OK) runtime_config.flame_on_threshold = val;
+    if (nvs_get_i32(handle, "flame_off", &val) == ESP_OK) runtime_config.flame_off_threshold = val;
+    if (nvs_get_i32(handle, "pump_start", &val) == ESP_OK) runtime_config.pump_start_delay_ms = val;
+    if (nvs_get_i32(handle, "pump_stop", &val) == ESP_OK) runtime_config.pump_stop_delay_ms = val;
+
     nvs_close(handle);
-
-    if (result == ESP_ERR_NVS_NOT_FOUND)
-    {
-        return;
-    }
-
-    if (result != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Could not read DHT22 interval from NVS: %s", esp_err_to_name(result));
-        return;
-    }
-
-    if (configured_interval_ms < DHT_READ_INTERVAL_MIN_MS
-        || configured_interval_ms > DHT_READ_INTERVAL_MAX_MS)
-    {
-        ESP_LOGW(TAG, "Ignoring invalid DHT22 interval stored in NVS: %lu ms",
-                 (unsigned long)configured_interval_ms);
-        return;
-    }
-
-    dht_read_interval_ms = configured_interval_ms;
 }
 
-
-static bool save_dht_read_interval(uint32_t interval_ms)
+static bool save_runtime_config(uint32_t dht_interval_ms, int flame_on, int flame_off, uint32_t pump_start, uint32_t pump_stop)
 {
     nvs_handle_t handle;
     esp_err_t result = nvs_open("fire_config", NVS_READWRITE, &handle);
 
-    if (result != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Could not open runtime config in NVS: %s", esp_err_to_name(result));
-        return false;
-    }
+    if (result != ESP_OK) return false;
 
-    result = nvs_set_u32(handle, "dht_interval_ms", interval_ms);
-    if (result == ESP_OK)
-    {
-        result = nvs_commit(handle);
-    }
+    nvs_set_u32(handle, "dht_interval_ms", dht_interval_ms);
+    nvs_set_i32(handle, "flame_on", flame_on);
+    nvs_set_i32(handle, "flame_off", flame_off);
+    nvs_set_i32(handle, "pump_start", pump_start);
+    nvs_set_i32(handle, "pump_stop", pump_stop);
+
+    result = nvs_commit(handle);
     nvs_close(handle);
 
-    if (result != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Could not save DHT22 interval to NVS: %s", esp_err_to_name(result));
-        return false;
-    }
-
-    return true;
+    return result == ESP_OK;
 }
+
 
 
 // ======================================================
@@ -756,12 +754,12 @@ static void leave_fire_state(void)
         pump_off_deadline_ms =
             now_ms()
             +
-            PUMP_STOP_DELAY_MS;
+            runtime_config.pump_stop_delay_ms;
 
         ESP_LOGI(
             TAG,
             "PUMP OFF scheduled in %d ms",
-            PUMP_STOP_DELAY_MS
+            runtime_config.pump_stop_delay_ms
         );
     }
 
@@ -804,24 +802,26 @@ static void update_fire_detection(
     {
         if (
             flame_adc
-            < FLAME_ON_THRESHOLD
+            <= runtime_config.flame_on_threshold
         )
         {
-            fire_counter++;
+            if (fire_condition_start_ms == 0) {
+                fire_condition_start_ms = now_ms();
+            }
 
+            int64_t elapsed = now_ms() - fire_condition_start_ms;
 
             ESP_LOGW(
                 TAG,
-                "Possible fire %d/%d | ADC=%d",
-                fire_counter,
-                FIRE_CONFIRM_COUNT,
+                "Possible fire elapsed %lld/%lu ms | ADC=%d",
+                (long long)elapsed,
+                (unsigned long)runtime_config.pump_start_delay_ms,
                 flame_adc
             );
 
-
             if (
-                fire_counter
-                >= FIRE_CONFIRM_COUNT
+                elapsed
+                >= runtime_config.pump_start_delay_ms
             )
             {
                 enter_fire_state(
@@ -829,10 +829,9 @@ static void update_fire_detection(
                 );
             }
         }
-
         else
         {
-            fire_counter = 0;
+            fire_condition_start_ms = 0;
         }
     }
 
@@ -845,7 +844,7 @@ static void update_fire_detection(
     {
         if (
             flame_adc
-            > FLAME_OFF_THRESHOLD
+            >= runtime_config.flame_off_threshold
         )
         {
             clear_counter++;
@@ -1436,26 +1435,51 @@ static void apply_mqtt_command(
         == 0
     )
     {
-        const cJSON *interval_value =
-            cJSON_IsObject(configuration)
-                ? cJSON_GetObjectItemCaseSensitive(
-                    configuration,
-                    "dht_sampling_period_ms"
-                )
-                : NULL;
+        const cJSON *interval_value = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "dht_sampling_period_ms") : NULL;
+        const cJSON *flame_on_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "flame_on_threshold") : NULL;
+        const cJSON *flame_off_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "flame_off_threshold") : NULL;
+        const cJSON *pump_start_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "pump_start_delay_ms") : NULL;
+        const cJSON *pump_stop_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "pump_stop_delay_ms") : NULL;
 
         if (
             strcmp(action, "set") != 0
             || !cJSON_IsNumber(interval_value)
-            || !isfinite(interval_value->valuedouble)
-            || interval_value->valuedouble < DHT_READ_INTERVAL_MIN_MS
-            || interval_value->valuedouble > DHT_READ_INTERVAL_MAX_MS
-            || interval_value->valuedouble != (double)(uint32_t)interval_value->valuedouble
+            || !cJSON_IsNumber(flame_on_val)
+            || !cJSON_IsNumber(flame_off_val)
+            || !cJSON_IsNumber(pump_start_val)
+            || !cJSON_IsNumber(pump_stop_val)
         )
         {
             accepted = false;
-            message = "invalid DHT22 sampling period";
+            message = "invalid config payload";
         }
+        else
+        {
+            uint32_t interval_ms = (uint32_t)interval_value->valuedouble;
+            int flame_on = (int)flame_on_val->valuedouble;
+            int flame_off = (int)flame_off_val->valuedouble;
+            uint32_t pump_start = (uint32_t)pump_start_val->valuedouble;
+            uint32_t pump_stop = (uint32_t)pump_stop_val->valuedouble;
+
+            if (save_runtime_config(interval_ms, flame_on, flame_off, pump_start, pump_stop))
+            {
+                dht_read_interval_ms = interval_ms;
+                runtime_config.flame_on_threshold = flame_on;
+                runtime_config.flame_off_threshold = flame_off;
+                runtime_config.pump_start_delay_ms = pump_start;
+                runtime_config.pump_stop_delay_ms = pump_stop;
+                
+                last_dht_read_ms = now_ms();
+                ESP_LOGI(TAG, "Config updated & saved to NVS");
+                message = "Config saved to NVS";
+            }
+            else
+            {
+                accepted = false;
+                message = "could not save config to NVS";
+            }
+        }
+    }
         else
         {
             uint32_t interval_ms = (uint32_t)interval_value->valuedouble;
