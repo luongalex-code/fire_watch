@@ -8,7 +8,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { FireWatchApp } from './features/firewatch';
 import { LoginPage } from './LoginPage';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 interface AuthUser {
   id: number;
