@@ -48,7 +48,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgrespassword@postgres:5432/fire_monitoring
-      API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}
       MQTT_HOST: emqx
       MQTT_PORT: 1883
       MQTT_USERNAME: ""

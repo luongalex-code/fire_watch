@@ -12,6 +12,8 @@ venv/
 # Frontend
 node_modules/
 dist/
+.vercel/
+.vercel-local/
 
 # Environment & Secrets
 .env
