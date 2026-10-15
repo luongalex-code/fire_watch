@@ -43,7 +43,7 @@ export const Sidebar: React.FC = () => {
     <div className="flex flex-col h-full bg-[#f8fafc] border-r border-slate-200 select-none">
       <div className="p-3">
         <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
-          {!isCollapsed && 'BANG DIEU KHIEN'}
+          {!isCollapsed && 'BẢNG ĐIỀU KHIỂN'}
         </div>
 
         <nav className="space-y-1">
@@ -96,7 +96,7 @@ export const Sidebar: React.FC = () => {
             <span className="font-bold text-slate-800">esp32-s3-01</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Bơm/coi/LED:</span>
+            <span className="text-slate-400">Bơm/còi/LED:</span>
             <span className="font-bold text-red-600">Theo telemetry</span>
           </div>
           <div className="flex justify-between">
@@ -117,7 +117,7 @@ export const Sidebar: React.FC = () => {
           ) : (
             <>
               <ChevronLeft className="w-4 h-4" />
-              <span>Thu gon menu</span>
+              <span>Thu gọn menu</span>
             </>
           )}
         </button>
@@ -131,7 +131,7 @@ export const Sidebar: React.FC = () => {
         <button
           onClick={() => setIsMobileOpen(true)}
           className="p-3 rounded-full bg-slate-900 text-white shadow-lg border border-slate-700 flex items-center justify-center hover:bg-slate-800 transition"
-          aria-label="Mo menu dieu huong"
+          aria-label="Mở menu điều hướng"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -149,7 +149,7 @@ export const Sidebar: React.FC = () => {
               <button
                 onClick={() => setIsMobileOpen(false)}
                 className="p-1 rounded text-slate-300 hover:text-white"
-                aria-label="Dong menu"
+                aria-label="Đóng menu"
               >
                 <X className="w-5 h-5" />
               </button>

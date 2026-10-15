@@ -11,11 +11,11 @@ class Command(Base):
     __tablename__ = "commands"
     __table_args__ = (
         CheckConstraint(
-            "target IN ('pump', 'buzzer', 'led', 'mode')",
+            "target IN ('pump', 'buzzer', 'led', 'mode', 'fan', 'lcd')",
             name="ck_commands_target",
         ),
         CheckConstraint(
-            "action IN ('on', 'off', 'toggle', 'auto', 'manual', 'silence', 'reset')",
+            "action IN ('on', 'off', 'toggle', 'auto', 'manual', 'silence', 'reset', 'clear')",
             name="ck_commands_action",
         ),
         CheckConstraint(

@@ -21,6 +21,7 @@
 #include "nvs_flash.h"
 
 #include "driver/gpio.h"
+#include "driver/i2c.h"
 #include "esp_adc/adc_oneshot.h"
 #include "cJSON.h"
 
@@ -29,13 +30,17 @@
 typedef struct {
     int flame_on_threshold;
     int flame_off_threshold;
+    int mq2_smoke_on_threshold;
+    int mq2_smoke_off_threshold;
     uint32_t pump_start_delay_ms;
     uint32_t pump_stop_delay_ms;
 } runtime_config_t;
 
 static runtime_config_t runtime_config = {
-    .flame_on_threshold = 1850,
-    .flame_off_threshold = 2500,
+    .flame_on_threshold = FLAME_ON_THRESHOLD,
+    .flame_off_threshold = FLAME_OFF_THRESHOLD,
+    .mq2_smoke_on_threshold = MQ2_SMOKE_ON_THRESHOLD,
+    .mq2_smoke_off_threshold = MQ2_SMOKE_OFF_THRESHOLD,
     .pump_start_delay_ms = 300,
     .pump_stop_delay_ms = 3000,
 };
@@ -67,14 +72,20 @@ static system_state_t system_state = STATE_NORMAL;
 
 static int fire_counter = 0;
 static int clear_counter = 0;
-
+static int smoke_counter = 0;
+static int smoke_clear_counter = 0;
 static bool led_state = false;
 static bool buzzer_running = false;
 static bool pump_running = false;
+static bool fan_running = false;
+static bool mq2_smoke_detected = false;
+static bool lcd_ready = false;
+static bool lcd_fire_latched = false;
 static bool auto_mode = true;
 
 static int64_t last_led_toggle_ms = 0;
 static int64_t last_pump_change_ms = 0;
+static int64_t last_lcd_update_ms = 0;
 static int64_t pump_off_deadline_ms = 0;
 static int64_t last_dht_read_ms = 0;
 static int64_t last_telemetry_publish_ms = 0;
@@ -148,13 +159,23 @@ static void load_runtime_config(void)
     int32_t val;
     if (nvs_get_i32(handle, "flame_on", &val) == ESP_OK) runtime_config.flame_on_threshold = val;
     if (nvs_get_i32(handle, "flame_off", &val) == ESP_OK) runtime_config.flame_off_threshold = val;
+    if (nvs_get_i32(handle, "mq2_on", &val) == ESP_OK) runtime_config.mq2_smoke_on_threshold = val;
+    if (nvs_get_i32(handle, "mq2_off", &val) == ESP_OK) runtime_config.mq2_smoke_off_threshold = val;
     if (nvs_get_i32(handle, "pump_start", &val) == ESP_OK) runtime_config.pump_start_delay_ms = val;
     if (nvs_get_i32(handle, "pump_stop", &val) == ESP_OK) runtime_config.pump_stop_delay_ms = val;
 
     nvs_close(handle);
 }
 
-static bool save_runtime_config(uint32_t dht_interval_ms, int flame_on, int flame_off, uint32_t pump_start, uint32_t pump_stop)
+static bool save_runtime_config(
+    uint32_t dht_interval_ms,
+    int flame_on,
+    int flame_off,
+    int mq2_on,
+    int mq2_off,
+    uint32_t pump_start,
+    uint32_t pump_stop
+)
 {
     nvs_handle_t handle;
     esp_err_t result = nvs_open("fire_config", NVS_READWRITE, &handle);
@@ -164,6 +185,8 @@ static bool save_runtime_config(uint32_t dht_interval_ms, int flame_on, int flam
     nvs_set_u32(handle, "dht_interval_ms", dht_interval_ms);
     nvs_set_i32(handle, "flame_on", flame_on);
     nvs_set_i32(handle, "flame_off", flame_off);
+    nvs_set_i32(handle, "mq2_on", mq2_on);
+    nvs_set_i32(handle, "mq2_off", mq2_off);
     nvs_set_i32(handle, "pump_start", pump_start);
     nvs_set_i32(handle, "pump_stop", pump_stop);
 
@@ -276,6 +299,40 @@ static void pump_off(void)
 
 
 // ======================================================
+// FAN RELAY
+// ======================================================
+
+static void fan_on(void)
+{
+    gpio_set_level(
+        FAN_RELAY_GPIO,
+        FAN_RELAY_ON
+    );
+
+    if (!fan_running)
+    {
+        fan_running = true;
+        ESP_LOGW(TAG, "FAN ON");
+    }
+}
+
+
+static void fan_off(void)
+{
+    gpio_set_level(
+        FAN_RELAY_GPIO,
+        FAN_RELAY_OFF
+    );
+
+    if (fan_running)
+    {
+        fan_running = false;
+        ESP_LOGI(TAG, "FAN OFF");
+    }
+}
+
+
+// ======================================================
 // OUTPUT INITIALIZATION
 // ======================================================
 
@@ -286,7 +343,8 @@ static void outputs_init(void)
         .pin_bit_mask =
             (1ULL << LED_GPIO) |
             (1ULL << BUZZER_GPIO) |
-            (1ULL << RELAY_GPIO),
+            (1ULL << RELAY_GPIO) |
+            (1ULL << FAN_RELAY_GPIO),
 
         .mode =
             GPIO_MODE_OUTPUT,
@@ -316,9 +374,244 @@ static void outputs_init(void)
         RELAY_OFF
     );
 
+    gpio_set_level(
+        FAN_RELAY_GPIO,
+        FAN_RELAY_OFF
+    );
 
     pump_running = false;
+    fan_running = false;
     pump_off_deadline_ms = 0;
+}
+
+
+// ======================================================
+// LCD I2C 16x2 / PCF8574
+// ======================================================
+
+#define LCD_BACKLIGHT 0x08
+#define LCD_ENABLE    0x04
+#define LCD_RS        0x01
+
+static esp_err_t lcd_i2c_write(uint8_t data)
+{
+    return i2c_master_write_to_device(
+        LCD_I2C_PORT,
+        LCD_I2C_ADDR,
+        &data,
+        1,
+        pdMS_TO_TICKS(50)
+    );
+}
+
+
+static esp_err_t lcd_pulse_enable(uint8_t data)
+{
+    esp_err_t result = lcd_i2c_write(data | LCD_ENABLE);
+    if (result != ESP_OK) return result;
+
+    esp_rom_delay_us(1);
+
+    result = lcd_i2c_write(data & ~LCD_ENABLE);
+    esp_rom_delay_us(50);
+    return result;
+}
+
+
+static esp_err_t lcd_write4(uint8_t value, uint8_t mode)
+{
+    uint8_t data = (value & 0xF0) | LCD_BACKLIGHT | mode;
+    return lcd_pulse_enable(data);
+}
+
+
+static esp_err_t lcd_send(uint8_t value, uint8_t mode)
+{
+    esp_err_t result = lcd_write4(value & 0xF0, mode);
+    if (result != ESP_OK) return result;
+
+    return lcd_write4((value << 4) & 0xF0, mode);
+}
+
+
+static esp_err_t lcd_command(uint8_t value)
+{
+    return lcd_send(value, 0);
+}
+
+
+static esp_err_t lcd_char(char value)
+{
+    return lcd_send((uint8_t)value, LCD_RS);
+}
+
+
+static void lcd_set_cursor(uint8_t col, uint8_t row)
+{
+    static const uint8_t row_offsets[] = {0x00, 0x40};
+    if (row > 1) row = 1;
+
+    lcd_command(0x80 | (col + row_offsets[row]));
+}
+
+
+static void lcd_print_padded(uint8_t row, const char *text)
+{
+    lcd_set_cursor(0, row);
+    size_t length = strlen(text);
+
+    for (int index = 0; index < LCD_COLS; index++)
+    {
+        char ch = index < (int)length ? text[index] : ' ';
+        lcd_char(ch);
+    }
+}
+
+
+static void lcd_init(void)
+{
+    i2c_config_t config =
+    {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = LCD_I2C_SDA_GPIO,
+        .scl_io_num = LCD_I2C_SCL_GPIO,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = LCD_I2C_FREQ_HZ,
+    };
+
+    esp_err_t result = i2c_param_config(LCD_I2C_PORT, &config);
+    if (result != ESP_OK)
+    {
+        ESP_LOGW(TAG, "LCD I2C config failed: %s", esp_err_to_name(result));
+        return;
+    }
+
+    result = i2c_driver_install(LCD_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
+    if (result != ESP_OK && result != ESP_ERR_INVALID_STATE)
+    {
+        ESP_LOGW(TAG, "LCD I2C driver install failed: %s", esp_err_to_name(result));
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    if (
+        lcd_write4(0x30, 0) != ESP_OK ||
+        lcd_write4(0x30, 0) != ESP_OK ||
+        lcd_write4(0x30, 0) != ESP_OK ||
+        lcd_write4(0x20, 0) != ESP_OK ||
+        lcd_command(0x28) != ESP_OK ||
+        lcd_command(0x0C) != ESP_OK ||
+        lcd_command(0x06) != ESP_OK ||
+        lcd_command(0x01) != ESP_OK
+    )
+    {
+        ESP_LOGW(TAG, "LCD I2C not detected at addr 0x%02X", LCD_I2C_ADDR);
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(2));
+
+    lcd_ready = true;
+    lcd_print_padded(0, "SMART FIRE IOT");
+    lcd_print_padded(1, "LCD READY");
+
+    ESP_LOGI(
+        TAG,
+        "LCD I2C ready SDA=GPIO%d SCL=GPIO%d addr=0x%02X",
+        LCD_I2C_SDA_GPIO,
+        LCD_I2C_SCL_GPIO,
+        LCD_I2C_ADDR
+    );
+}
+
+
+static void lcd_prepare_status(
+    bool fire_detected,
+    bool smoke_detected,
+    char line1[LCD_COLS + 1],
+    char line2[LCD_COLS + 1]
+)
+{
+    const char *top;
+    const char *bottom;
+
+    if (fire_detected)
+    {
+        top = "!!! BAO CHAY !!!";
+        bottom = "RA KHOI KHU VUC!";
+    }
+    else if (smoke_detected)
+    {
+        top = "!!! KHOI/KHI GA!";
+        bottom = "RA KHOI KHU VUC!";
+    }
+    else
+    {
+        top = "HE THONG AN TOAN";
+        bottom = "DANG GIAM SAT...";
+    }
+
+    memset(line1, ' ', LCD_COLS);
+    memset(line2, ' ', LCD_COLS);
+    line1[LCD_COLS] = '\0';
+    line2[LCD_COLS] = '\0';
+
+    size_t top_len = strlen(top);
+    size_t bottom_len = strlen(bottom);
+    if (top_len > LCD_COLS) top_len = LCD_COLS;
+    if (bottom_len > LCD_COLS) bottom_len = LCD_COLS;
+
+    memcpy(line1, top, top_len);
+    memcpy(line2, bottom, bottom_len);
+}
+
+
+static void lcd_render_status(void)
+{
+    if (!lcd_ready) return;
+
+    char line1[LCD_COLS + 1];
+    char line2[LCD_COLS + 1];
+
+    lcd_prepare_status(
+        lcd_fire_latched,
+        mq2_smoke_detected,
+        line1,
+        line2
+    );
+
+    lcd_print_padded(0, line1);
+    lcd_print_padded(1, line2);
+}
+
+
+static void lcd_clear_fire_alert(void)
+{
+    lcd_fire_latched = false;
+    last_lcd_update_ms = 0;
+    lcd_render_status();
+}
+
+
+static void lcd_update_status(int flame_adc, int gas_adc)
+{
+    (void)flame_adc;
+    (void)gas_adc;
+
+    if (!lcd_ready) return;
+
+    int64_t now = now_ms();
+    if (now - last_lcd_update_ms < LCD_UPDATE_MS) return;
+    last_lcd_update_ms = now;
+
+    if (system_state == STATE_FIRE)
+    {
+        lcd_fire_latched = true;
+    }
+
+    lcd_render_status();
 }
 
 
@@ -414,19 +707,17 @@ static int read_flame(void)
 
 
 // ======================================================
-// READ GAS MQ-2
+// READ GAS MQ-2 AO
 // ======================================================
 
 static int read_gas(void)
 {
     int total = 0;
+    int value = 0;
 
-
-    for (int i = 0; i < 5; i++)
+    // MQ-2 AO can be noisy, so read multiple samples like the standalone MQ2 test.
+    for (int i = 0; i < MQ2_SAMPLE_COUNT; i++)
     {
-        int value = 0;
-
-
         ESP_ERROR_CHECK(
             adc_oneshot_read(
                 adc1_handle,
@@ -435,17 +726,32 @@ static int read_gas(void)
             )
         );
 
-
         total += value;
 
-
         vTaskDelay(
-            pdMS_TO_TICKS(3)
+            pdMS_TO_TICKS(MQ2_SAMPLE_DELAY_MS)
         );
     }
 
+    return total / MQ2_SAMPLE_COUNT;
+}
 
-    return total / 5;
+
+static const char *mq2_level_text(
+    int gas_adc
+)
+{
+    if (gas_adc < 1000)
+    {
+        return "LOW";
+    }
+
+    if (gas_adc < 2500)
+    {
+        return "MEDIUM";
+    }
+
+    return "HIGH";
 }
 
 
@@ -957,6 +1263,74 @@ static void update_fire_outputs(void)
 
 
 // ======================================================
+// MQ-2 SMOKE / GAS DETECTION
+// ======================================================
+
+static void update_smoke_detection(
+    int gas_adc
+)
+{
+    const bool smoke_on_level = gas_adc >= runtime_config.mq2_smoke_on_threshold;
+    const bool smoke_off_level = gas_adc <= runtime_config.mq2_smoke_off_threshold;
+    // Toan tu ba ngoi de doc nhanh trang thai MQ-2 AO:
+    // ADC >= nguong bat ? CO_KHOI_KHI_GA : CHUA_DAT_NGUONG.
+    const char *smoke_status_text = smoke_on_level ? "CO_KHOI_KHI_GA" : "CHUA_DAT_NGUONG";
+
+    if (!mq2_smoke_detected)
+    {
+        if (smoke_on_level)
+        {
+            smoke_counter++;
+            smoke_clear_counter = 0;
+
+            if (smoke_counter >= MQ2_SMOKE_CONFIRM_COUNT)
+            {
+                mq2_smoke_detected = true;
+                smoke_counter = 0;
+                ESP_LOGW(
+                    TAG,
+                    "MQ-2 SMOKE/GAS DETECTED | ADC=%d | ON_THRESHOLD=%d | STATUS=%s",
+                    gas_adc,
+                    runtime_config.mq2_smoke_on_threshold,
+                    smoke_status_text
+                );
+                fan_on();
+            }
+        }
+        else
+        {
+            smoke_counter = 0;
+        }
+
+        return;
+    }
+
+    if (smoke_off_level)
+    {
+        smoke_clear_counter++;
+        smoke_counter = 0;
+
+        if (smoke_clear_counter >= MQ2_SMOKE_CLEAR_COUNT)
+        {
+            mq2_smoke_detected = false;
+            smoke_clear_counter = 0;
+            ESP_LOGI(
+                TAG,
+                "MQ-2 SMOKE/GAS CLEARED | ADC=%d | OFF_THRESHOLD=%d | STATUS=KHONG_CO",
+                gas_adc,
+                runtime_config.mq2_smoke_off_threshold
+            );
+            fan_off();
+        }
+    }
+    else
+    {
+        smoke_clear_counter = 0;
+    }
+}
+
+
+// ======================================================
 // MQTT PAYLOAD HELPERS
 // ======================================================
 
@@ -1088,6 +1462,8 @@ static void mqtt_publish_command_ack(
     cJSON_AddStringToObject(root, "status", status);
     cJSON_AddStringToObject(root, "message", message);
     cJSON_AddBoolToObject(root, "pump_relay_state", pump_running);
+    cJSON_AddBoolToObject(root, "fan_state", fan_running);
+    cJSON_AddBoolToObject(root, "mq2_smoke_detected", mq2_smoke_detected);
     cJSON_AddBoolToObject(root, "buzzer_state", buzzer_running);
     cJSON_AddBoolToObject(root, "led_state", led_state);
     cJSON_AddStringToObject(root, "operating_mode", auto_mode ? "auto" : "manual");
@@ -1135,9 +1511,11 @@ static void mqtt_publish_telemetry(
     cJSON_AddStringToObject(root, "area_name", AREA_NAME);
     cJSON_AddNumberToObject(root, "flame_adc", flame_adc);
     cJSON_AddNumberToObject(root, "mq2_adc", gas_adc);
+    cJSON_AddBoolToObject(root, "mq2_smoke_detected", mq2_smoke_detected);
     cJSON_AddStringToObject(root, "fire_state", system_state == STATE_FIRE ? "fire" : "normal");
     cJSON_AddStringToObject(root, "operating_mode", auto_mode ? "auto" : "manual");
     cJSON_AddBoolToObject(root, "pump_relay_state", pump_running);
+    cJSON_AddBoolToObject(root, "fan_state", fan_running);
     cJSON_AddBoolToObject(root, "buzzer_state", buzzer_running);
     cJSON_AddBoolToObject(root, "led_state", led_state);
     cJSON_AddStringToObject(root, "firmware_version", FIRMWARE_VERSION);
@@ -1431,6 +1809,82 @@ static void apply_mqtt_command(
     }
 
     else if (
+        strcmp(target, "fan")
+        == 0
+    )
+    {
+        if (
+            strcmp(action, "on")
+            == 0
+        )
+        {
+            fan_on();
+        }
+
+        else if (
+            strcmp(action, "toggle")
+            == 0
+        )
+        {
+            if (
+                fan_running
+            )
+            {
+                fan_off();
+            }
+
+            else
+            {
+                fan_on();
+            }
+        }
+
+        else if (
+            strcmp(action, "off")
+            == 0
+        )
+        {
+            fan_off();
+        }
+
+        else
+        {
+            accepted =
+                false;
+            message =
+                "unsupported fan action";
+        }
+    }
+
+    else if (
+        strcmp(target, "lcd")
+        == 0
+    )
+    {
+        if (
+            strcmp(action, "clear")
+            == 0
+            || strcmp(action, "reset")
+            == 0
+            || strcmp(action, "off")
+            == 0
+        )
+        {
+            lcd_clear_fire_alert();
+            message =
+                "lcd fire alert cleared";
+        }
+
+        else
+        {
+            accepted =
+                false;
+            message =
+                "unsupported lcd action";
+        }
+    }
+
+    else if (
         strcmp(target, "config")
         == 0
     )
@@ -1438,6 +1892,8 @@ static void apply_mqtt_command(
         const cJSON *interval_value = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "dht_sampling_period_ms") : NULL;
         const cJSON *flame_on_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "flame_on_threshold") : NULL;
         const cJSON *flame_off_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "flame_off_threshold") : NULL;
+        const cJSON *mq2_on_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "mq2_smoke_on_threshold") : NULL;
+        const cJSON *mq2_off_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "mq2_smoke_off_threshold") : NULL;
         const cJSON *pump_start_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "pump_start_delay_ms") : NULL;
         const cJSON *pump_stop_val = cJSON_IsObject(configuration) ? cJSON_GetObjectItemCaseSensitive(configuration, "pump_stop_delay_ms") : NULL;
 
@@ -1446,6 +1902,8 @@ static void apply_mqtt_command(
             || !cJSON_IsNumber(interval_value)
             || !cJSON_IsNumber(flame_on_val)
             || !cJSON_IsNumber(flame_off_val)
+            || !cJSON_IsNumber(mq2_on_val)
+            || !cJSON_IsNumber(mq2_off_val)
             || !cJSON_IsNumber(pump_start_val)
             || !cJSON_IsNumber(pump_stop_val)
         )
@@ -1458,14 +1916,28 @@ static void apply_mqtt_command(
             uint32_t interval_ms = (uint32_t)interval_value->valuedouble;
             int flame_on = (int)flame_on_val->valuedouble;
             int flame_off = (int)flame_off_val->valuedouble;
+            int mq2_on = (int)mq2_on_val->valuedouble;
+            int mq2_off = (int)mq2_off_val->valuedouble;
             uint32_t pump_start = (uint32_t)pump_start_val->valuedouble;
             uint32_t pump_stop = (uint32_t)pump_stop_val->valuedouble;
 
-            if (save_runtime_config(interval_ms, flame_on, flame_off, pump_start, pump_stop))
+            if (
+                mq2_off < 0 ||
+                mq2_on < 0 ||
+                mq2_on > 4095 ||
+                mq2_off >= mq2_on
+            )
+            {
+                accepted = false;
+                message = "invalid MQ-2 thresholds";
+            }
+            else if (save_runtime_config(interval_ms, flame_on, flame_off, mq2_on, mq2_off, pump_start, pump_stop))
             {
                 dht_read_interval_ms = interval_ms;
                 runtime_config.flame_on_threshold = flame_on;
                 runtime_config.flame_off_threshold = flame_off;
+                runtime_config.mq2_smoke_on_threshold = mq2_on;
+                runtime_config.mq2_smoke_off_threshold = mq2_off;
                 runtime_config.pump_start_delay_ms = pump_start;
                 runtime_config.pump_stop_delay_ms = pump_stop;
                 
@@ -1477,24 +1949,6 @@ static void apply_mqtt_command(
             {
                 accepted = false;
                 message = "could not save config to NVS";
-            }
-        }
-    }
-        else
-        {
-            uint32_t interval_ms = (uint32_t)interval_value->valuedouble;
-            if (save_dht_read_interval(interval_ms))
-            {
-                dht_read_interval_ms = interval_ms;
-                last_dht_read_ms = now_ms();
-                ESP_LOGI(TAG, "DHT22 sampling period updated to %lu ms",
-                         (unsigned long)dht_read_interval_ms);
-                message = "DHT22 sampling period saved to NVS";
-            }
-            else
-            {
-                accepted = false;
-                message = "could not save DHT22 sampling period to NVS";
             }
         }
     }
@@ -1988,12 +2442,20 @@ void app_main(void)
         RELAY_GPIO
     );
 
+    ESP_LOGI(
+        TAG,
+        "Fan relay: GPIO%d",
+        FAN_RELAY_GPIO
+    );
+
 
     // ==================================================
     // INIT
     // ==================================================
 
     outputs_init();
+
+    lcd_init();
 
     adc_init();
 
@@ -2060,6 +2522,13 @@ void app_main(void)
         int gas_adc =
             read_gas();
 
+        update_smoke_detection(
+            gas_adc
+        );
+
+        const char *smoke_status_text =
+            mq2_smoke_detected ? "CO_KHOI_KHI_GA" : "KHONG_CO";
+
 
         // --------------------------
         // Fire logic
@@ -2071,6 +2540,11 @@ void app_main(void)
 
 
         update_fire_outputs();
+
+        lcd_update_status(
+            flame_adc,
+            gas_adc
+        );
 
 
         // --------------------------
@@ -2125,15 +2599,19 @@ void app_main(void)
                 ESP_LOGI(
                     TAG,
 
-                    "Flame=%d | Gas=%d | Temp=%.1f C | Humidity=%.1f %% | State=%s | Pump=%s",
+                    "Flame=%d | Gas ADC=%d | GasLevel=%s | Temp=%.1f C | Humidity=%.1f %% | Smoke=%s | State=%s | Pump=%s | Fan=%s",
 
                     flame_adc,
 
                     gas_adc,
 
+                    mq2_level_text(gas_adc),
+
                     last_temperature,
 
                     last_humidity,
+
+                    smoke_status_text,
 
                     system_state
                         == STATE_FIRE
@@ -2141,6 +2619,10 @@ void app_main(void)
                         : "NORMAL",
 
                     pump_running
+                        ? "ON"
+                        : "OFF",
+
+                    fan_running
                         ? "ON"
                         : "OFF"
                 );
@@ -2161,13 +2643,17 @@ void app_main(void)
                 ESP_LOGW(
                     TAG,
 
-                    "Flame=%d | Gas=%d | DHT22 error=%d | State=%s | Pump=%s",
+                    "Flame=%d | Gas ADC=%d | GasLevel=%s | DHT22 error=%d | Smoke=%s | State=%s | Pump=%s | Fan=%s",
 
                     flame_adc,
 
                     gas_adc,
 
+                    mq2_level_text(gas_adc),
+
                     dht_result,
+
+                    smoke_status_text,
 
                     system_state
                         == STATE_FIRE
@@ -2175,6 +2661,10 @@ void app_main(void)
                         : "NORMAL",
 
                     pump_running
+                        ? "ON"
+                        : "OFF",
+
+                    fan_running
                         ? "ON"
                         : "OFF"
                 );

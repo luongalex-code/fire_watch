@@ -12,8 +12,12 @@ import { fireWatchService } from '../services';
 import { PumpAutoController } from './pumpAutoController';
 
 const CAMERA_SERVICE_URL = (import.meta.env.VITE_CAMERA_SERVICE_URL || 'http://127.0.0.1:8090').replace(/\/$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const PUMP_AUTO_ON_DELAY_MS = Number(import.meta.env.VITE_PUMP_AUTO_ON_DELAY_MS) || 4000;
 const PUMP_AUTO_OFF_DELAY_MS = Number(import.meta.env.VITE_PUMP_AUTO_OFF_DELAY_MS) || 4000;
+const SENSOR_FIRE_CONFIRM_WINDOW_MS = Number(import.meta.env.VITE_SENSOR_FIRE_CONFIRM_WINDOW_MS) || 10000;
+const SMOKE_GAS_TTS_TEXT = 'Phát hiện đám khói/rò rỉ khí ga.';
+const SMOKE_GAS_TTS_REPEAT_MS = 2000;
 
 export interface ToastMessage {
   id: string;
@@ -121,6 +125,11 @@ export const FireWatchProvider: React.FC<FireWatchProviderProps> = ({ children, 
   );
   const [latchedCriticalAlertId, setLatchedCriticalAlertId] = useState<string | null>(null);
   const lastUrgentToastAlertIdRef = useRef<string | null>(null);
+  const previousMq2SmokeDetectedRef = useRef(false);
+  const smokeGasTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const smokeGasTtsTokenRef = useRef(0);
+  const smokeGasTtsTimerRef = useRef<number | null>(null);
+  const smokeGasTtsPlayingRef = useRef(false);
 
   const operator = {
     name: currentUser?.full_name || currentUser?.email || 'Nguoi dung',
@@ -291,6 +300,11 @@ export const FireWatchProvider: React.FC<FireWatchProviderProps> = ({ children, 
       try {
         await fireWatchService.acknowledgeAlert(id, operator.name);
         await refreshAlerts();
+        void fireWatchService
+          .sendDeviceCommand('LCD cảnh báo', 8, 'lcd:clear', operator.name)
+          .catch((err) => {
+            console.warn('Không gửi được lệnh clear LCD:', err);
+          });
       } catch (err: unknown) {
         setLocallyAcknowledgedAlertIds((prev) => {
           const next = new Set(prev);
@@ -324,12 +338,6 @@ export const FireWatchProvider: React.FC<FireWatchProviderProps> = ({ children, 
             type: 'success',
             title: 'Lenh thuc thi thanh cong',
             message: `ESP32 phan hoi ACK sau ${cmd.ackLatencyMs}ms`,
-          });
-        } else if (cmd.status === 'pending_ack') {
-          showToast({
-            type: 'warning',
-            title: 'Dang cho xác nhận',
-            message: 'Lenh da gửi qua MQTT, dang doi goi tin phan hoi.',
           });
         } else {
           showToast({
@@ -377,30 +385,59 @@ export const FireWatchProvider: React.FC<FireWatchProviderProps> = ({ children, 
   const flameReadingIsFresh = Boolean(latestReading && !latestReading.isStale);
   const flameSensorFireDetected =
     flameReadingIsFresh && Boolean(latestReading?.flameFireDetected);
-  const cameraFireDetected = alertsWithConnectionState.some(
+  const isAlertInCurrentArea = (alert: AlertEvent) => alert.areaId === currentAreaId;
+  const isAlertConditionActive = (alert: AlertEvent) =>
+    alert.isActive && alert.conditionStatus === 'active';
+  const nowMs = Date.now();
+  const isRecentSensorFireAlert = (alert: AlertEvent) =>
+    alert.source === 'sensor' &&
+    alert.severity === 'critical' &&
+    alert.status === 'new' &&
+    alert.isActive &&
+    typeof alert.lastDetectedAtMs === 'number' &&
+    nowMs - alert.lastDetectedAtMs <= SENSOR_FIRE_CONFIRM_WINDOW_MS;
+  const cameraFireAlert = alertsWithConnectionState.find(
     (alert) =>
-      alert.areaId === currentAreaId &&
+      isAlertInCurrentArea(alert) &&
       (alert.source === 'ai' || alert.source === 'dual') &&
-      alert.severity === 'critical' &&
-      alert.isActive &&
-      alert.conditionStatus === 'active'
+      isAlertConditionActive(alert)
   );
-  const confirmedFire = cameraFireDetected && flameSensorFireDetected;
+  const sensorFireAlert = alertsWithConnectionState.find(
+    (alert) =>
+      isAlertInCurrentArea(alert) &&
+      (isAlertConditionActive(alert) || isRecentSensorFireAlert(alert)) &&
+      alert.source === 'sensor' &&
+      alert.severity === 'critical' &&
+      alert.status === 'new'
+  );
+  const cameraFireDetected = Boolean(cameraFireAlert);
+  const flameSensorFireDetectedForUi = flameSensorFireDetected || Boolean(sensorFireAlert);
+  const confirmedFire = cameraFireDetected && flameSensorFireDetectedForUi;
   const canConfirmNoFire = flameReadingIsFresh && !confirmedFire;
   const pumpState = flameReadingIsFresh ? latestReading?.pumpRelayState : null;
   const confirmedCriticalAlert =
     alertsWithConnectionState.find(
       (a) =>
+        isAlertInCurrentArea(a) &&
+        a.source === 'dual' &&
         a.severity === 'critical' &&
         a.status === 'new' &&
-        a.isActive &&
-        a.conditionStatus === 'active'
+        isAlertConditionActive(a)
     ) ||
     alertsWithConnectionState.find(
       (a) =>
+        isAlertInCurrentArea(a) &&
+        a.source === 'sensor' &&
         a.severity === 'critical' &&
-        a.isActive &&
-        a.conditionStatus === 'active'
+        a.status === 'new' &&
+        (isAlertConditionActive(a) || isRecentSensorFireAlert(a))
+    ) ||
+    alertsWithConnectionState.find(
+      (a) =>
+        isAlertInCurrentArea(a) &&
+        a.severity === 'critical' &&
+        a.status === 'new' &&
+        isAlertConditionActive(a)
     ) ||
     null;
 
@@ -466,6 +503,118 @@ export const FireWatchProvider: React.FC<FireWatchProviderProps> = ({ children, 
       message: `${activeCriticalAlert.areaName} - ${activeCriticalAlert.title}`,
     });
   }, [activeCriticalAlert, showToast]);
+
+  useEffect(() => {
+    const stopSmokeGasTts = () => {
+      smokeGasTtsTokenRef.current += 1;
+      if (smokeGasTtsTimerRef.current !== null) {
+        window.clearTimeout(smokeGasTtsTimerRef.current);
+        smokeGasTtsTimerRef.current = null;
+      }
+      smokeGasTtsPlayingRef.current = false;
+      if (smokeGasTtsAudioRef.current) {
+        smokeGasTtsAudioRef.current.pause();
+        smokeGasTtsAudioRef.current.currentTime = 0;
+        smokeGasTtsAudioRef.current = null;
+      }
+    };
+
+    const mq2SmokeDetected = Boolean(
+      latestReading &&
+      !latestReading.isStale &&
+      latestReading.mq2SmokeDetected
+    );
+    const previousMq2SmokeDetected = previousMq2SmokeDetectedRef.current;
+    previousMq2SmokeDetectedRef.current = mq2SmokeDetected;
+
+    if (!mq2SmokeDetected) {
+      stopSmokeGasTts();
+      return;
+    }
+
+    const areaName =
+      areas.find((area) => area.id === currentAreaId)?.name ||
+      latestReading?.areaId ||
+      'khu vực giám sát';
+
+    if (!previousMq2SmokeDetected) {
+      showToast({
+        type: 'warning',
+        title: 'Cảnh báo khói/khí ga',
+        message: `${areaName} - ${SMOKE_GAS_TTS_TEXT}`,
+      });
+    }
+
+    if (activeCriticalAlert) {
+      stopSmokeGasTts();
+      return;
+    }
+
+    if (smokeGasTtsPlayingRef.current || smokeGasTtsTimerRef.current !== null) return;
+
+    const requestToken = smokeGasTtsTokenRef.current + 1;
+    smokeGasTtsTokenRef.current = requestToken;
+
+    const playSmokeGasTtsLoop = async () => {
+      if (smokeGasTtsTokenRef.current !== requestToken || activeCriticalAlert) return;
+      smokeGasTtsPlayingRef.current = true;
+      let audioUrl: string | null = null;
+      let audio: HTMLAudioElement | null = null;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/tts/piper`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: SMOKE_GAS_TTS_TEXT,
+            length_scale: 0.95,
+            sentence_silence: 0.35,
+          }),
+        });
+        if (!response.ok || smokeGasTtsTokenRef.current !== requestToken) return;
+        const blob = await response.blob();
+        if (smokeGasTtsTokenRef.current !== requestToken) return;
+        audioUrl = URL.createObjectURL(blob);
+        const playingAudio = new Audio(audioUrl);
+        audio = playingAudio;
+        smokeGasTtsAudioRef.current = playingAudio;
+        await new Promise<void>((resolve, reject) => {
+          playingAudio.onended = () => resolve();
+          playingAudio.onpause = () => resolve();
+          playingAudio.onerror = () => reject(new Error('Không phát được âm thanh cảnh báo khói/khí ga.'));
+          void playingAudio.play().catch(reject);
+        });
+      } catch {
+        // Banner van hien thi; loi audio MQ-2 khong duoc anh huong luong chay chinh.
+      } finally {
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        if (audio && smokeGasTtsAudioRef.current === audio) smokeGasTtsAudioRef.current = null;
+        smokeGasTtsPlayingRef.current = false;
+        if (smokeGasTtsTokenRef.current === requestToken && !activeCriticalAlert) {
+          smokeGasTtsTimerRef.current = window.setTimeout(() => {
+            smokeGasTtsTimerRef.current = null;
+            void playSmokeGasTtsLoop();
+          }, SMOKE_GAS_TTS_REPEAT_MS);
+        }
+      }
+    };
+
+    void playSmokeGasTtsLoop();
+  }, [activeCriticalAlert, areas, currentAreaId, latestReading, showToast]);
+
+  useEffect(() => {
+    return () => {
+      smokeGasTtsTokenRef.current += 1;
+      if (smokeGasTtsTimerRef.current !== null) {
+        window.clearTimeout(smokeGasTtsTimerRef.current);
+        smokeGasTtsTimerRef.current = null;
+      }
+      if (smokeGasTtsAudioRef.current) {
+        smokeGasTtsAudioRef.current.pause();
+        smokeGasTtsAudioRef.current.currentTime = 0;
+        smokeGasTtsAudioRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new PumpAutoController(

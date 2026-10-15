@@ -68,6 +68,8 @@ PERSON_CLASS_ID = 0
 
 EVENT_COOLDOWN = float(os.getenv("FIRE_AI_EVENT_COOLDOWN", "5"))
 CAPTURE_FOLDER = os.getenv("FIRE_AI_CAPTURE_FOLDER", "captures")
+CAPTURE_MAX_FILES = max(0, int(os.getenv("FIRE_AI_CAPTURE_MAX_FILES", "200")))
+CAPTURE_JPEG_QUALITY = max(50, min(95, int(os.getenv("FIRE_AI_CAPTURE_JPEG_QUALITY", "82"))))
 IMG_SIZE = int(os.getenv("FIRE_AI_IMG_SIZE", "960"))
 
 TARGET_CLASSES = {"fire", "smoke"}
@@ -239,7 +241,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 self.wfile.write(frame)
                 self.wfile.write(b"\r\n")
                 time.sleep(1 / max(CAMERA_FPS, 1))
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 break
 
 
@@ -338,12 +340,42 @@ def connect_mqtt():
         return None
 
 
+def cleanup_old_captures():
+    if CAPTURE_MAX_FILES <= 0:
+        return
+
+    capture_root = Path(CAPTURE_FOLDER)
+    files = sorted(
+        capture_root.glob("fire_*.jpg"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+
+    for old_file in files[CAPTURE_MAX_FILES:]:
+        try:
+            old_file.unlink()
+        except OSError as exc:
+            print(f"[CAPTURE] Khong xoa duoc {old_file}: {exc}")
+
+
 def save_event(frame):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(CAPTURE_FOLDER, f"fire_{timestamp}.jpg")
-    cv2.imwrite(filename, frame)
+    capture_root = Path(CAPTURE_FOLDER)
+    capture_root.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    filename = capture_root / f"fire_{timestamp}.jpg"
+    ok = cv2.imwrite(
+        str(filename),
+        frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), CAPTURE_JPEG_QUALITY],
+    )
+    if not ok:
+        print(f"[CAPTURE] Khong luu duoc {filename}")
+        return None
+
+    cleanup_old_captures()
     print(f"[SAVE] {filename}")
-    return filename
+    return str(filename)
 
 
 def get_person_state():
@@ -487,7 +519,7 @@ def draw_person_detections(frame, detections):
         )
 
 
-def build_detection_payload(detections, snapshot_path=None, video_path=None):
+def build_detection_payload(detections, snapshot_path=None):
     return {
         "camera_code": CAMERA_CODE,
         "area_code": AREA_CODE,
@@ -497,7 +529,7 @@ def build_detection_payload(detections, snapshot_path=None, video_path=None):
         "model_version": MODEL_PATH,
         "detections": detections,
         "snapshot_path": snapshot_path,
-        "video_path": video_path,
+        "video_path": None,
     }
 
 
@@ -534,16 +566,20 @@ def publish_person_state_to_backend():
 
 def send_to_backend(payload):
     if not SEND_TO_BACKEND:
-        return
+        return None
 
     url = f"{BACKEND_URL.rstrip('/')}/api/vision/detections"
 
     try:
         response = requests.post(url, json=payload, timeout=2.5)
         response.raise_for_status()
-        print(f"[BACKEND] Sent detection event -> alert_id={response.json().get('alert_id')}")
+        data = response.json()
+        alert_id = data.get('alert_id')
+        print(f"[BACKEND] Sent detection event -> alert_id={alert_id}")
+        return alert_id
     except Exception as exc:
         print(f"[BACKEND] Gui event that bai: {exc}")
+        return None
 
 
 def refresh_runtime_settings(force=False):

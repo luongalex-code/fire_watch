@@ -15,6 +15,19 @@ import {
   Lock,
 } from 'lucide-react';
 
+const DEFAULT_TTS_SCENARIO = {
+  ttsInitialMessage: 'Chú ý, chú ý. Cảnh báo cháy tại {areaName}.',
+  ttsInitialRepeatCount: 2,
+  ttsRepeatDelayMs: 2000,
+  ttsFireRepeatMessage: 'Cảnh báo cháy tại {areaName}.',
+  ttsPersonDetectedMessage: 'Phát hiện {personCount} người tại {areaName}.',
+  ttsPersonRepeatMessage: 'Phát hiện {personCount} người tại {areaName}.',
+  ttsInitialEnabled: true,
+  ttsFireRepeatEnabled: true,
+  ttsPersonDetectedEnabled: true,
+  ttsPersonRepeatEnabled: true,
+};
+
 export const SettingsPage: React.FC = () => {
   const { showToast } = useFireWatch();
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -26,7 +39,7 @@ export const SettingsPage: React.FC = () => {
     fireWatchService.getSettings().then(setSettings).catch((error: Error) => {
       showToast({
         type: 'error',
-        title: 'Không tải được cau hinh',
+        title: 'Không tải được cấu hình',
         message: error.message,
       });
     });
@@ -49,7 +62,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   if (!settings) {
-    return <div className="p-8 text-center text-slate-500">Dang tai cau hinh...</div>;
+    return <div className="p-8 text-center text-slate-500">Đang tải cấu hình...</div>;
   }
 
   const handleSaveSettings = async () => {
@@ -57,19 +70,20 @@ export const SettingsPage: React.FC = () => {
     try {
       const saved = await fireWatchService.saveSettings(settings);
       setSettings(saved);
+      window.dispatchEvent(new CustomEvent('firewatch:settings-updated', { detail: saved }));
       setIsDirty(false);
       showToast({
         type: 'success',
-        title: 'Da luu cau hinh',
+        title: 'Đã lưu cấu hình',
         message: saved.deviceConfigQueued
-          ? 'Da luu tren backend va dua chu ky doc DHT22 vao MQTT retained de ESP32 nhan khi ket noi.'
-          : 'Da luu tren backend. ESP32 se nhan cau hinh khi ket noi MQTT.',
+          ? 'Đã lưu trên backend và đưa cấu hình DHT22/MQ-2 vào MQTT retained để ESP32 nhận khi kết nối.'
+          : 'Đã lưu trên backend. ESP32 sẽ nhận cấu hình khi kết nối MQTT.',
       });
     } catch (error) {
       showToast({
         type: 'error',
-        title: 'Không lưu được cau hinh',
-        message: error instanceof Error ? error.message : 'Loi khong xac dinh',
+        title: 'Không lưu được cấu hình',
+        message: error instanceof Error ? error.message : 'Lỗi không xác định',
       });
     } finally {
       setIsSaving(false);
@@ -86,6 +100,8 @@ export const SettingsPage: React.FC = () => {
       aiCooldownSeconds: 5,
       flameTriggerThresholdAdc: 1850,
       flameClearThresholdAdc: 2500,
+      mq2SmokeOnThresholdAdc: 1200,
+      mq2SmokeOffThresholdAdc: 900,
       dhtSamplingPeriodMs: 2000,
       pumpStartDelayMs: 300,
       pumpStopDelayMs: 3000,
@@ -93,16 +109,7 @@ export const SettingsPage: React.FC = () => {
       pumpCycleOffMs: 3000,
       pumpMaxDurationSec: 30,
       hardwareInterlockMode: 'manual_override',
-      ttsInitialMessage: 'Chú ý, chú ý. Cảnh báo cháy tại {areaName}.',
-      ttsInitialRepeatCount: 2,
-      ttsRepeatDelayMs: 2000,
-      ttsFireRepeatMessage: 'Cảnh báo cháy tại {areaName}.',
-      ttsPersonDetectedMessage: 'Phát hiện {personCount} người tại {areaName}.',
-      ttsPersonRepeatMessage: 'Phát hiện {personCount} người tại {areaName}.',
-      ttsInitialEnabled: true,
-      ttsFireRepeatEnabled: true,
-      ttsPersonDetectedEnabled: true,
-      ttsPersonRepeatEnabled: true,
+      ...DEFAULT_TTS_SCENARIO,
     });
   };
 
@@ -116,16 +123,16 @@ export const SettingsPage: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[11px] font-bold text-slate-700">v2.4.1-prod</span>
+              <span className="font-mono text-[11px] font-bold text-slate-700">v1.0.0-fire-aiot</span>
               <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
-                • Cấu hình duoc luu tren backend
+                • Cấu hình được lưu trên backend
               </span>
             </div>
             <h2 className="text-base font-bold text-slate-900">
-              CAU HINH THONG SO VAN HANH &amp; LIEN DONG HE THONG
+              CẤU HÌNH THÔNG SỐ VẬN HÀNH &amp; LIÊN ĐỘNG HỆ THỐNG
             </h2>
             <p className="text-xs text-slate-500 font-mono">
-              Cấu hình duoc luu trong backend; AI doc nguong runtime, DHT22 GPIO3 nhan chu ky doc qua MQTT. Cac tham so phan cung khac van theo cau hinh firmware.
+              Cấu hình được lưu trong backend; AI đọc ngưỡng runtime, DHT22 (GPIO3) nhận chu kỳ đọc qua MQTT. Các tham số phần cứng khác vẫn theo cấu hình firmware.
             </p>
           </div>
         </div>
@@ -136,7 +143,7 @@ export const SettingsPage: React.FC = () => {
             onClick={handleResetDefaults}
             className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-xs transition"
           >
-            Nap mac dinh (Reset)
+            Nạp mặc định (Reset)
           </button>
           <button
             type="button"
@@ -145,7 +152,7 @@ export const SettingsPage: React.FC = () => {
             className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition disabled:opacity-50"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>{isSaving ? 'Dang luu...' : 'Luu cau hinh'}</span>
+            <span>{isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
           </button>
         </div>
       </div>
@@ -160,7 +167,7 @@ export const SettingsPage: React.FC = () => {
               : 'border-transparent hover:text-slate-900'
           }`}
         >
-          1. Thi giac may tinh &amp; AI (Camera AI)
+          1. Thị giác máy tính &amp; AI (Camera AI)
         </button>
         <button
           onClick={() => setActiveTab('sensors')}
@@ -180,7 +187,7 @@ export const SettingsPage: React.FC = () => {
               : 'border-transparent hover:text-slate-900'
           }`}
         >
-          3. Ánh xạ GPIO &amp; Ro-le Chap hanh
+          3. Ánh xạ GPIO &amp; Rơ-le Chấp hành
         </button>
         <button
           onClick={() => setActiveTab('interlock')}
@@ -190,7 +197,7 @@ export const SettingsPage: React.FC = () => {
               : 'border-transparent hover:text-slate-900'
           }`}
         >
-          4. Luong xác nhận & điều khiển
+          4. Luồng xác nhận &amp; điều khiển
         </button>
         <button
           onClick={() => setActiveTab('tts')}
@@ -212,36 +219,36 @@ export const SettingsPage: React.FC = () => {
             <div className="p-3.5 rounded-lg border-2 border-slate-900 bg-slate-50/50">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-bold text-slate-900">
-                  YOLO Fire/Smoke custom model
+                  Mô hình YOLO nhận diện Lửa &amp; Khói (Fire &amp; Smoke)
                 </span>
                 <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold">
-                  DANG DUNG
+                  ĐANG SỬ DỤNG
                 </span>
               </div>
               <p className="text-xs text-slate-600 mb-2 leading-relaxed">
-                Mo hinh YOLO nhận diện lửa/khói chay trong camera service. Ten file .pt la trong so noi bo, giao dien chi hien thi loai mo hinh khi chua co metadata phien ban thật.
+                Mô hình YOLO nhận diện lửa/khói chạy trong Camera AI service (models/best.pt). Kết quả phát hiện được gửi trực tiếp theo thời gian thực về backend qua sự kiện AI.
               </p>
               <div className="font-mono text-[11px] text-slate-500">
-                Camera service - realtime stream - backend event
+                Camera AI service • Luồng trực tiếp (MJPEG Stream) • Sự kiện Backend
               </div>
             </div></div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-black text-slate-900">Cấu hình ngưỡng suy luận</h3>
+                <h3 className="text-sm font-black text-slate-900">Cấu hình ngưỡng suy luận AI</h3>
                 <p className="text-xs text-slate-500 font-mono">
-                  Runtime Params - luu truc tiep tren backend/PostgreSQL qua API /api/settings.
+                  Tham số Runtime - lưu trực tiếp trên backend/PostgreSQL qua API /api/settings.
                 </p>
               </div>
               <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
-                LIVE CONFIG
+                CẤU HÌNH TRỰC TIẾP
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Ngưỡng tin cay Lua (Fire Conf)
+                Ngưỡng tin cậy Lửa (Fire Confidence)
               </label>
               <input
                 type="number"
@@ -254,12 +261,12 @@ export const SettingsPage: React.FC = () => {
                 }
                 className="w-full text-xs font-mono p-2 rounded border border-slate-300"
               />
-              <div className="text-[10px] text-slate-400 mt-1">Khuyen dung: 0.70 - 0.85 de giam bao nham.</div>
+              <div className="text-[10px] text-slate-400 mt-1">Khuyến nghị: 0.70 - 0.85 để giảm báo nhầm.</div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Ngưỡng tin cay Khoi (Smoke Conf)
+                Ngưỡng tin cậy Khói (Smoke Confidence)
               </label>
               <input
                 type="number"
@@ -272,12 +279,12 @@ export const SettingsPage: React.FC = () => {
                 }
                 className="w-full text-xs font-mono p-2 rounded border border-slate-300"
               />
-              <div className="text-[10px] text-slate-400 mt-1">Khuyen dung: 0.55 - 0.75 de tranh nham bui/hoi nuoc.</div>
+              <div className="text-[10px] text-slate-400 mt-1">Khuyến nghị: 0.55 - 0.75 để tránh nhầm bụi/hơi nước.</div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Frames xác nhận lien tiep
+                Số khung hình xác nhận liên tiếp
               </label>
               <input
                 type="number"
@@ -289,7 +296,7 @@ export const SettingsPage: React.FC = () => {
                 }
                 className="w-full text-xs font-mono p-2 rounded border border-slate-300"
               />
-              <div className="text-[10px] text-slate-400 mt-1">So frame lien tiep can dat truoc khi AI gửi sự kiện.</div>
+              <div className="text-[10px] text-slate-400 mt-1">Số frame liên tiếp cần đạt trước khi AI gửi sự kiện.</div>
             </div>
           </div>
           </div>
@@ -301,7 +308,7 @@ export const SettingsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
-              <div className="text-xs font-bold text-slate-900">Cảm biến Lửa Flame (GPIO6)</div>
+              <div className="text-xs font-bold text-slate-900">Cảm biến Lửa Flame Sensor (GPIO6 - ADC1_CH5)</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <label className="block text-slate-600 mb-1">Ngưỡng phát hiện lửa (ADC):</label>
@@ -327,13 +334,13 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
               <div className="text-[10px] text-slate-500">
-                Tín hiệu nghịch đảo: ADC &lt;= Ngưỡng phát hiện thì báo cháy. ADC &gt;= Ngưỡng hết lửa thì hết cháy.
+                Tín hiệu nghịch đảo: ADC &le; Ngưỡng phát hiện thì báo cháy. ADC &ge; Ngưỡng hết lửa thì hết cháy.
               </div>
             </div>
 
             <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
-              <div className="text-xs font-bold text-slate-900">Nhiệt ẩm DHT22 (GPIO3)</div>
-              <div className="text-xs text-slate-600">Chu ky doc 1-Wire (ms):</div>
+              <div className="text-xs font-bold text-slate-900">Cảm biến Nhiệt độ &amp; Độ ẩm DHT22 (GPIO3)</div>
+              <div className="text-xs text-slate-600">Chu kỳ đọc 1-Wire (ms):</div>
               <input
                 type="number"
                 value={settings.dhtSamplingPeriodMs}
@@ -342,8 +349,45 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => updateDhtSamplingPeriod(e.target.value)}
                 className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
               />
+              <div className="mt-3 rounded border border-orange-200 bg-orange-50 p-2.5">
+                <div className="text-xs font-bold text-orange-900">Cảm biến khói/khí ga MQ-2 (GPIO5 - ADC1_CH4)</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-slate-600 mb-1">Ngưỡng bật quạt (ADC):</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={4095}
+                      value={settings.mq2SmokeOnThresholdAdc}
+                      onChange={(e) =>
+                        updateSettings({ ...settings, mq2SmokeOnThresholdAdc: parseInt(e.target.value, 10) })
+                      }
+                      className="w-full text-xs font-mono p-1.5 rounded border border-orange-200 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 mb-1">Ngưỡng tắt quạt (ADC):</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={4095}
+                      value={settings.mq2SmokeOffThresholdAdc}
+                      onChange={(e) =>
+                        updateSettings({ ...settings, mq2SmokeOffThresholdAdc: parseInt(e.target.value, 10) })
+                      }
+                      className="w-full text-xs font-mono p-1.5 rounded border border-orange-200 bg-white"
+                    />
+                  </div>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-700 space-y-0.5">
+                  <div>Kênh AO: <strong>ADC1_CH4 (GPIO5)</strong></div>
+                  <div>Dữ liệu DB: <strong>mq2Adc</strong> lưu ADC thô 0 - 4095 và <strong>mq2SmokeDetected</strong> lưu trạng thái ngưỡng</div>
+                  <div>Liên động: phát hiện khói/khí ga sẽ bật <strong>relay quạt GPIO15</strong></div>
+                  <div>Không suy diễn ppm khi chưa hiệu chuẩn; chỉ dùng ADC thô để trực quan hóa và so ngưỡng quạt.</div>
+                </div>
+              </div>
               <div className="text-[10px] text-slate-500">
-                Pham vi ho tro: 2,000–60,000ms; gia tri duoc luu tren backend va gửi qua MQTT toi ESP32.
+                Phạm vi hỗ trợ: 2,000–60,000 ms; giá trị được lưu trên backend và gửi qua MQTT tới ESP32.
               </div>
             </div>
           </div>
@@ -355,10 +399,10 @@ export const SettingsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
-              <div className="text-xs font-bold text-slate-900">Co che Bao ve Phần cứng Bơm Cuu Hoa</div>
+              <div className="text-xs font-bold text-slate-900">Cơ chế bảo vệ phần cứng Bơm cứu hỏa (GPIO16)</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <label className="block text-slate-600 mb-1">Thời gian Bat (ON ms):</label>
+                  <label className="block text-slate-600 mb-1">Thời gian Bật chu kỳ (ON ms):</label>
                   <input
                     type="number"
                     value={settings.pumpCycleOnMs}
@@ -369,7 +413,7 @@ export const SettingsPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-600 mb-1">Thời gian Tat (OFF ms):</label>
+                  <label className="block text-slate-600 mb-1">Thời gian Tắt chu kỳ (OFF ms):</label>
                   <input
                     type="number"
                     value={settings.pumpCycleOffMs}
@@ -381,12 +425,12 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
               <div className="text-[10px] text-slate-500">
-                Chu ky mac dinh: 0.3 giay Bat / 3 giay Tat de chong chay cuon dong co va ngua sut ap.
+                Chu kỳ mặc định: 300ms Bật / 3000ms Tắt để chống cháy cuộn động cơ và ngừa sụt áp nguồn.
               </div>
             </div>
 
             <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
-              <div className="text-xs font-bold text-slate-900">Gioi han thoi gian bom toi da (Max Timeout)</div>
+              <div className="text-xs font-bold text-slate-900">Giới hạn thời gian bơm tối đa (Max Timeout - giây)</div>
               <input
                 type="number"
                 value={settings.pumpMaxDurationSec}
@@ -396,7 +440,7 @@ export const SettingsPage: React.FC = () => {
                 className="w-full text-xs font-mono p-2 rounded border border-slate-300 bg-white"
               />
               <div className="text-[10px] text-slate-500">
-                Tu dong ngat sau 180s neu không có lenh gia han thu cong tu dieu hanh vien.
+                Tự động ngắt sau thời gian tối đa cài đặt nếu không có lệnh gia hạn thủ công từ điều hành viên.
               </div>
             </div>
           </div>
@@ -408,7 +452,7 @@ export const SettingsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-              Luong xác nhận chay va điều khiển
+              Luồng xác nhận cháy &amp; Điều khiển liên động
             </h3>
             <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
               Backend + MQTT + ESP32
@@ -417,24 +461,24 @@ export const SettingsPage: React.FC = () => {
 
           <div className="space-y-3 text-xs">
             <div className="p-3 rounded-lg border border-red-200 bg-red-50/60 space-y-1">
-              <div className="font-bold text-red-900">Điều kiện xác nhận chay</div>
+              <div className="font-bold text-red-900">Điều kiện xác nhận cháy (Xác nhận kép Dual-Check)</div>
               <div className="text-[11px] font-mono text-red-800">
-                Cảm biến ESP32 bao FIRE cùng khu vực va camera AI bao lửa/khói trong khoang hop le.
+                Cảm biến ESP32 báo CHÁY cùng khu vực và Camera AI báo Lửa/Khói trong khoảng hợp lệ.
               </div>
               <div className="text-[11px] text-slate-700">
-                Khi đủ điều kiện kép, backend tao/cap nhat cảnh báo active va gửi MQTT command <strong>pump:on</strong> xuong ESP32.
+                Khi đủ điều kiện kép, backend tạo/cập nhật cảnh báo kích hoạt và gửi MQTT command <strong>pump:on</strong> xuống ESP32.
               </div>
             </div>
 
             <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1">
-              <div className="font-bold text-slate-900">Lệnh điều khiển</div>
+              <div className="font-bold text-slate-900">Lệnh điều khiển &amp; Phản hồi ACK</div>
               <div className="text-[11px] text-slate-700">
-                Lenh bom/coi di qua backend va MQTT. Chi xem la da nhan khi ESP32 gửi ACK về backend.
+                Lệnh bơm/quạt/còi đi qua backend và MQTT. Chỉ xem là đã nhận khi ESP32 gửi gói ACK về backend.
               </div>
               
               <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Delay bật bơm (ms):</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Độ trễ bật bơm (Start Delay ms):</label>
                   <input
                     type="number"
                     value={settings.pumpStartDelayMs}
@@ -445,7 +489,7 @@ export const SettingsPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Delay tắt bơm (ms):</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Độ trễ tắt bơm (Stop Delay ms):</label>
                   <input
                     type="number"
                     value={settings.pumpStopDelayMs}
@@ -459,9 +503,9 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/60 space-y-1">
-              <div className="font-bold text-amber-900">Dữ liệu chưa đủ điều kiện</div>
+              <div className="font-bold text-amber-900">Dữ liệu chưa đủ điều kiện xác nhận kép</div>
               <div className="text-[11px] text-slate-700">
-                AI phát hiện đơn lẻ hoặc cảm biến phát hiện đơn lẻ chỉ tạo trạng thái cần theo dõi; không hiển thị như đã đủ điều kiện bật bơm.
+                Camera AI phát hiện đơn lẻ hoặc cảm biến phát hiện đơn lẻ chỉ tạo trạng thái cần theo dõi; không tự động kích hoạt bơm chữa cháy.
               </div>
             </div>
           </div>
@@ -472,12 +516,12 @@ export const SettingsPage: React.FC = () => {
       <div className="bg-slate-900 text-slate-300 p-3 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
         <div className="flex items-center gap-2">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Checksum cau hinh SHA-256: <strong>{settings.checksumSha256}</strong></span>
+          <span>Mã checksum cấu hình SHA-256: <strong>{settings.checksumSha256}</strong></span>
         </div>
         <div>
           Trạng thái: {isDirty
-            ? <span className="text-amber-400 font-bold">Co thay doi chua luu</span>
-            : <span className="text-emerald-400 font-bold">Da luu tren backend</span>}
+            ? <span className="text-amber-400 font-bold">Có thay đổi chưa lưu</span>
+            : <span className="text-emerald-400 font-bold">Đã lưu trên backend</span>}
         </div>
       </div>
       {/* Tab 5: TTS Settings */}
@@ -485,7 +529,7 @@ export const SettingsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-b-lg border border-slate-200 shadow-sm space-y-4">
           <div className="flex flex-col space-y-4">
             <div className="text-xs text-slate-500 mb-2">
-              <strong>Placeholder hỗ trợ:</strong> {'{areaName}'}, {'{personCount}'}
+              <strong>Tham số thay thế hỗ trợ:</strong> {'{areaName}'} (tên khu vực), {'{personCount}'} (số lượng người)
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -508,7 +552,7 @@ export const SettingsPage: React.FC = () => {
                 />
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-1">Số lần lặp:</label>
+                    <label className="block text-[11px] text-slate-600 mb-1">Số lần phát lặp lại:</label>
                     <input
                       type="number"
                       min="1" max="10"
@@ -534,7 +578,7 @@ export const SettingsPage: React.FC = () => {
               {/* Repeat Fire */}
               <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại khi cháy</div>
+                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại khi đang có cháy</div>
                   <input
                     type="checkbox"
                     checked={settings.ttsFireRepeatEnabled}
@@ -553,7 +597,7 @@ export const SettingsPage: React.FC = () => {
               {/* Initial Person */}
               <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-900">Khi mới phát hiện người</div>
+                  <div className="text-xs font-bold text-slate-900">Khi mới phát hiện người trong khu vực</div>
                   <input
                     type="checkbox"
                     checked={settings.ttsPersonDetectedEnabled}
@@ -572,7 +616,7 @@ export const SettingsPage: React.FC = () => {
               {/* Repeat Person */}
               <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại có người</div>
+                  <div className="text-xs font-bold text-slate-900">Chu kỳ nhắc lại khi còn người trong khu vực</div>
                   <input
                     type="checkbox"
                     checked={settings.ttsPersonRepeatEnabled}

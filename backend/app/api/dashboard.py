@@ -15,6 +15,7 @@ from app.models.runtime_setting import RuntimeSetting
 from app.models.telemetry import Telemetry
 from app.mqtt.client import mqtt_service
 from app.services.fire_monitoring import ensure_area
+from app.services.audit_history import enrich_audit_logs
 
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -31,6 +32,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "aiCooldownSeconds": 5,
     "flameTriggerThresholdAdc": 1850,
     "flameClearThresholdAdc": 2500,
+    "mq2SmokeOnThresholdAdc": 1200,
+    "mq2SmokeOffThresholdAdc": 900,
     "dhtSamplingPeriodMs": 2000,
     "pumpStartDelayMs": 300,
     "pumpStopDelayMs": 3000,
@@ -74,6 +77,8 @@ def _validate_runtime_settings(payload: dict[str, Any]) -> None:
     integer_ranges = {
         "flameTriggerThresholdAdc": (0, 4095),
         "flameClearThresholdAdc": (0, 4095),
+        "mq2SmokeOnThresholdAdc": (0, 4095),
+        "mq2SmokeOffThresholdAdc": (0, 4095),
         "dhtSamplingPeriodMs": (2000, 60000),
         "pumpStartDelayMs": (0, 60000),
         "pumpStopDelayMs": (0, 60000),
@@ -105,6 +110,9 @@ def _validate_runtime_settings(payload: dict[str, Any]) -> None:
 
     if payload["flameTriggerThresholdAdc"] >= payload["flameClearThresholdAdc"]:
         raise ValueError("flameTriggerThresholdAdc must be less than flameClearThresholdAdc")
+
+    if payload["mq2SmokeOffThresholdAdc"] >= payload["mq2SmokeOnThresholdAdc"]:
+        raise ValueError("mq2SmokeOffThresholdAdc must be less than mq2SmokeOnThresholdAdc")
 
     if not isinstance(payload["aiModelName"], str) or not payload["aiModelName"].strip():
         raise ValueError("aiModelName must be a non-empty string")
@@ -201,8 +209,10 @@ def _empty_reading(area_id: str) -> dict[str, Any]:
         "humidityPercent": None,
         "flameAdc": None,
         "mq2Adc": None,
+        "mq2SmokeDetected": None,
         "flameFireDetected": False,
         "pumpRelayState": None,
+        "fanState": None,
         "buzzerState": None,
         "ledState": None,
         "operatingMode": "unknown",
@@ -221,8 +231,10 @@ def _reading_payload(row: Telemetry, area_code: str, device: Device | None = Non
         "humidityPercent": _number(row.humidity_percent),
         "flameAdc": row.flame_adc,
         "mq2Adc": row.mq2_adc,
+        "mq2SmokeDetected": row.mq2_smoke_detected,
         "flameFireDetected": row.fire_state == "fire",
         "pumpRelayState": row.pump_relay_state,
+        "fanState": row.fan_state,
         "buzzerState": row.buzzer_state,
         "ledState": row.led_state,
         "operatingMode": row.operating_mode,
@@ -299,6 +311,8 @@ def sensor_history(
             "humidity": _number(row.humidity_percent),
             "flameAdc": row.flame_adc,
             "mq2Adc": row.mq2_adc,
+            "mq2SmokeDetected": row.mq2_smoke_detected,
+            "fanState": row.fan_state,
         }
         for row in rows
     ]
@@ -311,21 +325,9 @@ def list_audit_logs(
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
 ):
-    rows = db.scalars(select(AuditLog).order_by(desc(AuditLog.occurred_at)).limit(limit)).all()
+    rows = db.scalars(select(AuditLog).order_by(desc(AuditLog.occurred_at), desc(AuditLog.id)).limit(limit)).all()
     payload = []
-    for row in rows:
-        details = row.change_details or {}
-        item = {
-            "id": str(row.id),
-            "timestamp": row.occurred_at.isoformat(),
-            "source": row.entity_type or "backend",
-            "channel": row.action,
-            "level": details.get("level", "AUDIT"),
-            "message": details.get("message", row.action),
-            "device": row.entity_id,
-            "operator": str(row.actor_user_id) if row.actor_user_id else None,
-            "details": details,
-        }
+    for item in enrich_audit_logs(db, rows):
         if level and item["level"] != level:
             continue
         if q and q.lower() not in item["message"].lower():
@@ -356,6 +358,8 @@ def save_settings_payload(settings: dict[str, Any], db: Session = Depends(get_db
                 "dht_sampling_period_ms": saved["dhtSamplingPeriodMs"],
                 "flame_on_threshold": saved["flameTriggerThresholdAdc"],
                 "flame_off_threshold": saved["flameClearThresholdAdc"],
+                "mq2_smoke_on_threshold": saved["mq2SmokeOnThresholdAdc"],
+                "mq2_smoke_off_threshold": saved["mq2SmokeOffThresholdAdc"],
                 "pump_start_delay_ms": saved["pumpStartDelayMs"],
                 "pump_stop_delay_ms": saved["pumpStopDelayMs"],
             },

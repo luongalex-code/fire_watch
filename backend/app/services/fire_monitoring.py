@@ -186,10 +186,12 @@ def record_telemetry(db: Session, payload: TelemetryIn) -> tuple[Telemetry, Aler
         humidity_percent=payload.humidity_percent,
         flame_adc=payload.flame_adc,
         mq2_adc=payload.mq2_adc,
+        mq2_smoke_detected=payload.mq2_smoke_detected,
         dht22_error_code=payload.dht22_error_code,
         fire_state=payload.fire_state,
         operating_mode=payload.operating_mode,
         pump_relay_state=payload.pump_relay_state,
+        fan_state=payload.fan_state,
         buzzer_state=payload.buzzer_state,
         led_state=payload.led_state,
     )
@@ -209,6 +211,7 @@ def record_telemetry(db: Session, payload: TelemetryIn) -> tuple[Telemetry, Aler
             details={
                 "flame_adc": payload.flame_adc,
                 "mq2_adc": payload.mq2_adc,
+                "mq2_smoke_detected": payload.mq2_smoke_detected,
                 "dht22_error_code": payload.dht22_error_code,
             },
         )

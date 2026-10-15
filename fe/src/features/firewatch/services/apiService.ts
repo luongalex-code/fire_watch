@@ -75,7 +75,10 @@ export class ApiFireWatchService implements IFireWatchService {
 
   public async getAlerts(filters?: AlertFilterOptions): Promise<AlertEvent[]> {
     const params = new URLSearchParams();
-    if (filters?.areaId) params.append('areaId', filters.areaId);
+    if (filters?.areaId) params.append('area_code', filters.areaId);
+    if (filters?.startedFrom) params.append('started_from', filters.startedFrom);
+    if (filters?.startedBefore) params.append('started_before', filters.startedBefore);
+    if (filters?.limit) params.append('limit', String(filters.limit));
     if (filters?.status) params.append('status', this.toBackendStatus(filters.status));
     if (filters?.severity) params.append('severity', filters.severity);
 
@@ -137,7 +140,7 @@ export class ApiFireWatchService implements IFireWatchService {
   }
 
   public async getAuditLogs(filters?: { level?: string; query?: string }): Promise<AuditLog[]> {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ limit: '500' });
     if (filters?.level) params.append('level', filters.level);
     if (filters?.query) params.append('q', filters.query);
     return this.request<AuditLog[]>(`/api/logs?${params.toString()}`);
@@ -176,12 +179,48 @@ export class ApiFireWatchService implements IFireWatchService {
       }
     };
 
+    const mapRealtimeTelemetry = (payload: Record<string, unknown>): SensorReading | null => {
+      const eventAreaId = String(payload.area_code || areaId);
+      if (eventAreaId !== areaId) return null;
+      const timestamp = typeof payload.measured_at === 'string' ? payload.measured_at : new Date().toISOString();
+      return {
+        id: String(payload.id || `ws-${Date.now()}`),
+        areaId: eventAreaId as SensorReading['areaId'],
+        timestamp,
+        temperatureC: typeof payload.temperature_c === 'number' ? payload.temperature_c : null,
+        humidityPercent: typeof payload.humidity_percent === 'number' ? payload.humidity_percent : null,
+        flameAdc: typeof payload.flame_adc === 'number' ? payload.flame_adc : null,
+        mq2Adc: typeof payload.mq2_adc === 'number' ? payload.mq2_adc : null,
+        mq2SmokeDetected: typeof payload.mq2_smoke_detected === 'boolean' ? payload.mq2_smoke_detected : null,
+        flameFireDetected: payload.fire_state === 'fire',
+        pumpRelayState: typeof payload.pump_relay_state === 'boolean' ? payload.pump_relay_state : null,
+        fanState: typeof payload.fan_state === 'boolean' ? payload.fan_state : null,
+        buzzerState: typeof payload.buzzer_state === 'boolean' ? payload.buzzer_state : null,
+        ledState: typeof payload.led_state === 'boolean' ? payload.led_state : null,
+        operatingMode: typeof payload.operating_mode === 'string' ? payload.operating_mode : null,
+        isStale: false,
+      };
+    };
+
     try {
       socket = new WebSocket(`${this.baseUrl.replace(/^http/, 'ws')}/ws`);
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'telemetry' || data.type === 'alert_updated') {
+          if (data.type === 'telemetry') {
+            const reading = mapRealtimeTelemetry(data.payload || {});
+            if (reading && !stopped) {
+              currentToken += 1;
+              callback(reading);
+              return;
+            }
+            void loadLatest();
+          }
+          if (
+            data.type === 'alert_updated' ||
+            data.type === 'vision_detection' ||
+            data.type === 'command_ack'
+          ) {
             void loadLatest();
           }
         } catch {
@@ -320,11 +359,15 @@ export class ApiFireWatchService implements IFireWatchService {
       id: String(row.id),
       code: `#EV-${String(row.id).padStart(4, '0')}`,
       timestamp: this.formatTime(row.started_at),
+      startedAtMs: Date.parse(row.started_at),
+      lastDetectedAtMs: Date.parse(row.last_detected_at),
+      conditionClearedAtMs: row.condition_cleared_at ? Date.parse(row.condition_cleared_at) : undefined,
       areaId: String(row.area_code || row.area_id) as Area['id'],
       areaName: row.area_name || `Khu vực ${row.area_id}`,
       source: this.mapSource(row.source_type),
       sourceDescription: this.mapSourceDescription(row.source_type),
       severity: this.mapSeverity(row.severity),
+      backendSeverity: row.severity,
       status,
       isActive,
       conditionStatus,
@@ -332,7 +375,7 @@ export class ApiFireWatchService implements IFireWatchService {
       description: text.description,
       operatorId: row.acknowledged_by ? String(row.acknowledged_by) : undefined,
       operatorName: String(details.acknowledged_by_name || '') || (row.acknowledged_by ? `User ${row.acknowledged_by}` : undefined),
-      acknowledgedAt: this.formatTime(row.acknowledged_at),
+      acknowledgedAt: row.acknowledged_at ? this.formatTime(row.acknowledged_at) : undefined,
       conditionClearedAt: this.formatTime(row.condition_cleared_at),
       snapshotUrl: firstDetection?.snapshot_path || '',
       aiConfidence: typeof details.best_confidence === 'number' ? details.best_confidence : null,
@@ -387,14 +430,20 @@ export class ApiFireWatchService implements IFireWatchService {
 
   private mapCommandTarget(targetDevice: string, payload: string): { target: string; action: string } {
     const text = `${targetDevice} ${payload}`.toLowerCase();
-    const target = text.includes('bom') || text.includes('bom') || text.includes('pump')
+    const target = text.includes('lcd') || text.includes('man hinh') || text.includes('màn hình')
+      ? 'lcd'
+      : text.includes('quat') || text.includes('fan')
+      ? 'fan'
+      : text.includes('bom') || text.includes('bom') || text.includes('pump')
       ? 'pump'
       : text.includes('coi') || text.includes('coi') || text.includes('buzzer')
         ? 'buzzer'
         : text.includes('den') || text.includes('den') || text.includes('strobe') || text.includes('led')
           ? 'led'
           : 'mode';
-    const action = text.includes('stop') || text.includes('off')
+    const action = target === 'lcd'
+      ? 'clear'
+      : text.includes('stop') || text.includes('off')
       ? 'off'
       : text.includes('mute') || text.includes('silence')
         ? 'silence'
@@ -431,7 +480,7 @@ export class ApiFireWatchService implements IFireWatchService {
       id: row.command_uuid || String(row.id),
       timestamp: this.formatTime(row.requested_at),
       targetDevice: label || this.formatDeviceLabel(row),
-      gpio: row.target === 'pump' ? 16 : row.target === 'buzzer' ? 7 : row.target === 'led' ? 2 : 0,
+      gpio: row.target === 'pump' ? 16 : row.target === 'fan' ? 15 : row.target === 'buzzer' ? 7 : row.target === 'led' ? 2 : 0,
       commandPayload: `${row.target}:${row.action}`,
       topic: `fire/devices/${row.device_code || row.device_id}/commands`,
       ackLatencyMs: latency && latency > 0 ? latency : undefined,

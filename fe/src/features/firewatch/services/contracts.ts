@@ -14,6 +14,9 @@ export interface AlertFilterOptions {
   status?: string;
   severity?: string;
   query?: string;
+  startedFrom?: string;
+  startedBefore?: string;
+  limit?: number;
 }
 
 export interface TelemetryHistoryPoint {
@@ -22,6 +25,8 @@ export interface TelemetryHistoryPoint {
   humidity: number | null;
   flameAdc: number | null;
   mq2Adc: number | null;
+  mq2SmokeDetected?: boolean | null;
+  fanState?: boolean | null;
 }
 
 export interface IFireWatchService {

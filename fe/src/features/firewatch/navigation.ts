@@ -2,7 +2,15 @@ export interface NavItem {
   id: string;
   label: string;
   path: string;
-  iconName: 'LayoutDashboard' | 'Camera' | 'Radio' | 'BellRing' | 'Sliders' | 'FileSpreadsheet' | 'SlidersHorizontal' | 'ScrollText';
+  iconName:
+    | 'LayoutDashboard'
+    | 'Camera'
+    | 'Radio'
+    | 'BellRing'
+    | 'Sliders'
+    | 'FileSpreadsheet'
+    | 'SlidersHorizontal'
+    | 'ScrollText';
   badgeKey?: 'unacknowledgedAlerts';
   description?: string;
 }
@@ -13,21 +21,21 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Tổng quan',
     path: '',
     iconName: 'LayoutDashboard',
-    description: 'Trang tong hop trang thai ESP32-S3, camera AI va cảnh báo',
+    description: 'Trang tổng hợp trạng thái ESP32-S3, camera AI và cảnh báo',
   },
   {
     id: 'camera',
     label: 'Camera & AI',
     path: 'camera',
     iconName: 'Camera',
-    description: 'Stream camera, phát hiện lửa/khói va lich su capture',
+    description: 'Stream camera, phát hiện lửa/khói và lịch sử capture',
   },
   {
     id: 'sensors',
     label: 'Cảm biến',
     path: 'sensors',
     iconName: 'Radio',
-    description: 'Telemetry ESP32-S3: DHT22, Flame ADC thô',
+    description: 'Telemetry ESP32-S3: DHT22, Flame ADC thô và MQ-2 ADC thô',
   },
   {
     id: 'alerts',
@@ -35,21 +43,21 @@ export const NAV_ITEMS: NavItem[] = [
     path: 'alerts',
     iconName: 'BellRing',
     badgeKey: 'unacknowledgedAlerts',
-    description: 'Danh sach cảnh báo, tiep nhan va trang thai điều kiện',
+    description: 'Danh sách cảnh báo, tiếp nhận và trạng thái điều kiện',
   },
   {
     id: 'devices',
-    label: 'Thiết bị & Dieu khien',
+    label: 'Thiết bị & Điều khiển',
     path: 'devices',
     iconName: 'Sliders',
-    description: 'Lenh MQTT va trang thai relay bom, coi, den tu ESP32',
+    description: 'Lệnh MQTT và trạng thái relay bơm, còi, đèn, quạt từ ESP32',
   },
   {
     id: 'reports',
-    label: 'Báo cáo & CSV',
+    label: 'Báo cáo',
     path: 'reports',
     iconName: 'FileSpreadsheet',
-    description: 'Báo cáo cảnh báo tu du lieu thật trong database',
+    description: 'Báo cáo cảnh báo từ dữ liệu thật trong database',
   },
   {
     id: 'settings',
@@ -63,6 +71,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Nhật ký hệ thống',
     path: 'logs',
     iconName: 'ScrollText',
-    description: 'Audit thao tac, lenh điều khiển va sự kiện hệ thống',
+    description: 'Audit thao tác, lệnh điều khiển và sự kiện hệ thống',
   },
 ];

@@ -27,14 +27,28 @@ def _alert_payload(alert: Alert, area: Area | None = None) -> dict:
 def list_alerts(
     status: str | None = Query(default=None),
     area_id: int | None = Query(default=None),
+    area_code: str | None = Query(default=None),
+    started_from: datetime | None = Query(default=None),
+    started_before: datetime | None = Query(default=None),
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
 ):
-    query = select(Alert, Area).join(Area, Area.id == Alert.area_id).order_by(Alert.started_at.desc()).limit(limit)
+    for value in (started_from, started_before):
+        if value is not None and value.utcoffset() is None:
+            raise HTTPException(status_code=422, detail="Date filters require a timezone.")
+    if started_from and started_before and started_from >= started_before:
+        raise HTTPException(status_code=422, detail="Invalid date range.")
+    query = select(Alert, Area).join(Area, Area.id == Alert.area_id).order_by(Alert.started_at.desc(), Alert.id.desc()).limit(limit)
     if status:
         query = query.where(Alert.status == status)
     if area_id:
         query = query.where(Alert.area_id == area_id)
+    if area_code:
+        query = query.where(Area.area_code == area_code)
+    if started_from:
+        query = query.where(Alert.started_at >= started_from)
+    if started_before:
+        query = query.where(Alert.started_at < started_before)
     return [_alert_payload(alert, area) for alert, area in db.execute(query).all()]
 
 

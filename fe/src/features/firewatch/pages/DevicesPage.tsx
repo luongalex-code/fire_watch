@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, Cpu, Download, Power, Zap } from 'lucide-react';
+import { Bell, Cpu, Download, Power, Wind, Zap } from 'lucide-react';
 import { useFireWatch } from '../hooks/useFireWatch';
 import { DeviceCommand } from '../types';
 import { fireWatchService } from '../services';
@@ -113,7 +113,7 @@ export const DevicesPage: React.FC = () => {
       render: (item) => {
         const label: Record<string, string> = {
           sending: 'Dang gửi',
-          pending_ack: 'Cho ESP32 ACK',
+          pending_ack: 'Chờ thiết bị xác nhận',
           ack_success: 'ESP32 da xác nhận',
           failed: 'That bai',
           timeout: 'Timeout',
@@ -137,9 +137,6 @@ export const DevicesPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">Thiết bị & điều khiển</h2>
-              <p className="text-xs text-slate-500">
-                Lệnh điều khiển di qua backend/MQTT va chi duoc xem la xác nhận khi ESP32 phan hoi ACK.
-              </p>
             </div>
           </div>
           <span
@@ -152,7 +149,7 @@ export const DevicesPage: React.FC = () => {
         </div>
       </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <ActuatorCard
           id="pump"
           name="Bơm chữa cháy"
@@ -165,12 +162,31 @@ export const DevicesPage: React.FC = () => {
           offCommand="pump:off"
           onLabel="Bật bơm"
           offLabel="Tắt bơm"
-          descOn="Lệnh sẽ được gửi qua backend/MQTT đến ESP32. Relay ON không chứng minh bơm có nước."
-          descOff="Lệnh tắt bơm không đồng nghĩa điều kiện cảnh báo đã hết."
+          descOn="Bật bơm chữa cháy. Cần kiểm tra nguồn nước trước khi sử dụng."
+          descOff="Tắt bơm. Cảnh báo cháy vẫn được theo dõi."
           colorScheme="red"
           lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
           onActionClick={handleActionClick}
           pendingTarget={pendingAction?.target === 'Bơm chữa cháy' ? 'pump' : null}
+        />
+        <ActuatorCard
+          id="fan"
+          name="Quạt hút khói/khí ga"
+          gpio={15}
+          icon={<Wind className="w-5 h-5 text-orange-600" />}
+          currentState={latestReading?.fanState ?? null}
+          isStale={isStale}
+          isOffline={isOffline}
+          onCommand="fan:on"
+          offCommand="fan:off"
+          onLabel="Bật quạt"
+          offLabel="Tắt quạt"
+          descOn="Bật quạt hút khói và khí ga."
+          descOff="Tắt quạt. Hệ thống vẫn tiếp tục theo dõi khói và khí ga."
+          colorScheme="amber"
+          lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
+          onActionClick={handleActionClick}
+          pendingTarget={pendingAction?.target === 'fan' ? 'fan' : null}
         />
         <ActuatorCard
           id="buzzer"
@@ -184,8 +200,8 @@ export const DevicesPage: React.FC = () => {
           offCommand="buzzer:off"
           onLabel="Bật còi"
           offLabel="Tắt còi"
-          descOn="Lệnh thủ công qua backend/MQTT. Còi vẫn có thể bị điều khiển tự động bởi trạng thái cháy."
-          descOff="Tiếp nhận hoặc tắt còi không làm mất đi trạng thái cháy."
+          descOn="Bật còi báo động."
+          descOff="Tắt còi. Cảnh báo cháy vẫn được theo dõi."
           colorScheme="red"
           lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
           onActionClick={handleActionClick}
@@ -203,8 +219,8 @@ export const DevicesPage: React.FC = () => {
           offCommand="led:off"
           onLabel="Bật đèn"
           offLabel="Tắt đèn"
-          descOn="Lệnh thủ công. Trạng thái chỉ xác nhận khi ESP32 ACK."
-          descOff="Tắt đèn không làm mất cảnh báo và không ảnh hưởng luồng tự động."
+          descOn="Bật đèn cảnh báo."
+          descOff="Tắt đèn. Cảnh báo cháy vẫn được theo dõi."
           colorScheme="amber"
           lastUpdated={latestReading?.timestamp ? new Date(latestReading.timestamp).toLocaleTimeString('vi-VN') : undefined}
           onActionClick={handleActionClick}

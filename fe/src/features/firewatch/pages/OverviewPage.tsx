@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Clock, ExternalLink, Flame, Radio, ShieldAlert, Video } from 'lucide-react';
+import { Clock, ExternalLink, Flame, Radio, ShieldAlert, Video } from 'lucide-react';
 import { useFireWatch } from '../hooks/useFireWatch';
 import { CameraPlayer } from '../components/camera/CameraPlayer';
 import { SensorCards } from '../components/sensors/SensorCard';
@@ -23,6 +23,7 @@ export const OverviewPage: React.FC = () => {
   const cameraStreamUrl = import.meta.env.VITE_CAMERA_STREAM_URL || 'http://127.0.0.1:8090/stream';
   const [historyData, setHistoryData] = useState<TelemetryHistoryPoint[]>([]);
   const [historyError, setHistoryError] = useState('');
+  const [mq2SmokeOnThresholdAdc, setMq2SmokeOnThresholdAdc] = useState(1200);
   const historyRangeMinutes = 24 * 60;
 
   const currentArea = areas.find((area) => area.id === currentAreaId) || areas[0] || null;
@@ -43,6 +44,16 @@ export const OverviewPage: React.FC = () => {
     const interval = window.setInterval(() => void loadTelemetryHistory(), 15000);
     return () => window.clearInterval(interval);
   }, [loadTelemetryHistory]);
+
+  useEffect(() => {
+    let mounted = true;
+    fireWatchService.getSettings().then((settings) => {
+      if (mounted) setMq2SmokeOnThresholdAdc(settings.mq2SmokeOnThresholdAdc ?? 1200);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const esp32Devices = devices.filter((device) => device.type === 'mcu_esp32');
   const cameraDevices = devices.filter((device) => device.type === 'camera_rtsp');
@@ -93,9 +104,6 @@ export const OverviewPage: React.FC = () => {
               <Flame className="w-3.5 h-3.5" />
               {areaStatus.text}
             </span>
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-1.5">
-            Ma khu vực: {currentArea?.code || currentArea?.id || 'Chưa có dữ liệu'}
           </div>
         </div>
 
@@ -168,16 +176,6 @@ export const OverviewPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm">
-        <div className="flex items-start gap-2 text-xs text-slate-700">
-          <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-          <div>
-            <strong>Luồng bật bơm:</strong> cảm biến xác nhận lửa + AI xác nhận lửa/khói trong cùng khu vực
-            trong điều kiện backend đang theo dõi. Khi đủ điều kiện kép, backend gửi MQTT <code>pump:on</code>.
-            AI phát hiện đơn lẻ hoặc cảm biến phát hiện đơn lẻ chưa đủ để xem là điều kiện bật bơm từ backend.
-          </div>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-7">
@@ -202,7 +200,11 @@ export const OverviewPage: React.FC = () => {
               Không tải được lich su telemetry: {historyError}
             </div>
           ) : (
-            <TelemetryDualAxisChart data={historyData} className="min-h-[640px]" />
+            <TelemetryDualAxisChart
+              data={historyData}
+              className="min-h-[640px]"
+              mq2SmokeOnThresholdAdc={mq2SmokeOnThresholdAdc}
+            />
           )}
         </div>
 

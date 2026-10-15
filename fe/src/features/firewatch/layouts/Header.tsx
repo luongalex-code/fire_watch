@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
             </div>
             <div className="hidden lg:block leading-tight">
               <h1 className="text-sm font-bold tracking-tight text-white">
-                FIREWATCH - GIÁM SÁT HO TRO CHUA CHAY
+                FIREWATCH - GIÁM SÁT HỖ TRỢ CHỮA CHÁY
               </h1>
               <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">
                 ESP32-S3 + Camera AI + Backend + MQTT

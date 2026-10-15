@@ -14,10 +14,12 @@ class TelemetryIn(BaseModel):
     humidity_percent: float | None = None
     flame_adc: int | None = None
     mq2_adc: int | None = None
+    mq2_smoke_detected: bool | None = None
     dht22_error_code: int | None = None
     fire_state: str = "unknown"
     operating_mode: str = "unknown"
     pump_relay_state: bool | None = None
+    fan_state: bool | None = None
     buzzer_state: bool | None = None
     led_state: bool | None = None
     firmware_version: str | None = None
@@ -31,9 +33,11 @@ class TelemetryOut(ORMModel):
     humidity_percent: float | None = None
     flame_adc: int | None = None
     mq2_adc: int | None = None
+    mq2_smoke_detected: bool | None = None
     dht22_error_code: int | None = None
     fire_state: str
     operating_mode: str
     pump_relay_state: bool | None = None
+    fan_state: bool | None = None
     buzzer_state: bool | None = None
     led_state: bool | None = None

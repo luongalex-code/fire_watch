@@ -1,20 +1,56 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Literal
 
 from app.database.connection import get_db
 from app.core.config import get_settings
 from app.mqtt.client import mqtt_service
 from app.models.vision_detection import VisionDetection
-from app.schemas.vision import PersonVisionStateIn, PersonVisionStateOut, VisionDetectionIn, VisionDetectionOut
+from app.schemas.vision import (
+    PersonVisionStateIn,
+    PersonVisionStateOut,
+    VisionDetectionIn,
+    VisionDetectionOut,
+)
 from app.services.dual_confirmation import send_pump_on_if_dual_confirmed
 from app.services.fire_monitoring import record_vision_detection
+from app.services.capture_history import capture_filters, capture_groups
 from app.websocket.manager import websocket_manager
 
 
 router = APIRouter(prefix="/api/vision", tags=["vision"])
 latest_person_states: dict[str, PersonVisionStateOut] = {}
+
+
+@router.get("/capture-groups")
+def list_capture_groups(
+    day: date | None = None,
+    label: Literal["fire", "smoke"] | None = None,
+    limit: int = Query(default=100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return capture_groups(db, day=day, label=label, limit=limit)
+
+
+@router.get("/captures", response_model=list[VisionDetectionOut])
+def list_captures(
+    alert_id: int | None = None,
+    capture_id: int | None = None,
+    day: date | None = None,
+    label: Literal["fire", "smoke"] | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    query = select(VisionDetection).where(*capture_filters(day, label))
+    if alert_id is not None:
+        query = query.where(VisionDetection.alert_id == alert_id)
+    if capture_id is not None:
+        query = query.where(VisionDetection.id == capture_id)
+    return db.scalars(query.order_by(VisionDetection.frame_at.desc(), VisionDetection.id.desc())
+                      .offset(offset).limit(limit)).all()
 
 
 @router.get("/detections", response_model=list[VisionDetectionOut])

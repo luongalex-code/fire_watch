@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { AIDetection } from '../../types';
 import { DetectionOverlay } from './DetectionOverlay';
 import { Camera, Maximize2, CheckSquare, Square, RefreshCw, AlertOctagon } from 'lucide-react';

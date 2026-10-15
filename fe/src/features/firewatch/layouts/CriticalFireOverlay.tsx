@@ -13,14 +13,15 @@ import {
 } from 'lucide-react';
 import { useFireWatch } from '../hooks/useFireWatch';
 import { CameraPlayer } from '../components/camera/CameraPlayer';
+import { SystemSettings } from '../types';
 
 const cameraStreamUrl = import.meta.env.VITE_CAMERA_STREAM_URL || 'http://127.0.0.1:8090/stream';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 const PERSON_MAX_AGE_SECONDS = Number(import.meta.env.VITE_PERSON_TTS_MAX_AGE_SECONDS || 3);
-const TTS_REPEAT_DELAY_SECONDS = Number(import.meta.env.VITE_TTS_REPEAT_DELAY_SECONDS || 2);
 const TTS_LENGTH_SCALE = Number(import.meta.env.VITE_PIPER_TTS_LENGTH_SCALE || 0.95);
 const TTS_SENTENCE_SILENCE = Number(import.meta.env.VITE_PIPER_TTS_SENTENCE_SILENCE || 0.35);
+const TTS_LOCK_KEY = 'firewatch:tts-owner';
 
 const formatPersonTime = (value?: string | null) => {
   if (!value) return '';
@@ -70,12 +71,30 @@ export const CriticalFireOverlay: React.FC = () => {
   } = useFireWatch();
 
   const [isAcknowledging, setIsAcknowledging] = useState(false);
-  const [ttsSettings, setTtsSettings] = useState<any>(null);
+  const [ttsSettings, setTtsSettings] = useState<SystemSettings | null>(null);
+  const ttsOwnerIdRef = useRef(`tts-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   useEffect(() => {
-    import('../services').then(({ fireWatchService }) => {
-      fireWatchService.getSettings().then(setTtsSettings).catch(console.error);
-    });
+    let stopped = false;
+    const loadTtsSettings = () => {
+      import('../services').then(({ fireWatchService }) => {
+        fireWatchService.getSettings().then((settings) => {
+          if (!stopped) setTtsSettings(settings);
+        }).catch(console.error);
+      });
+    };
+
+    const handleSettingsUpdated = (event: Event) => {
+      const nextSettings = (event as CustomEvent<SystemSettings>).detail;
+      if (nextSettings) setTtsSettings(nextSettings);
+    };
+
+    loadTtsSettings();
+    window.addEventListener('firewatch:settings-updated', handleSettingsUpdated);
+    return () => {
+      stopped = true;
+      window.removeEventListener('firewatch:settings-updated', handleSettingsUpdated);
+    };
   }, []);
 
   const [ttsError, setTtsError] = useState('');
@@ -94,6 +113,28 @@ export const CriticalFireOverlay: React.FC = () => {
     personDetected: false,
     personCount: 0,
   });
+
+  const releaseTtsOwner = useCallback(() => {
+    const raw = window.localStorage.getItem(TTS_LOCK_KEY);
+    const owner = raw ? JSON.parse(raw) as { id?: string } : null;
+    if (owner?.id === ttsOwnerIdRef.current) {
+      window.localStorage.removeItem(TTS_LOCK_KEY);
+    }
+  }, []);
+
+  const claimTtsOwner = useCallback(() => {
+    const now = Date.now();
+    const raw = window.localStorage.getItem(TTS_LOCK_KEY);
+    const owner = raw ? JSON.parse(raw) as { id?: string; until?: number } : null;
+    if (owner?.id && owner.id !== ttsOwnerIdRef.current && (owner.until || 0) > now) {
+      return false;
+    }
+    window.localStorage.setItem(TTS_LOCK_KEY, JSON.stringify({
+      id: ttsOwnerIdRef.current,
+      until: now + 30000,
+    }));
+    return true;
+  }, []);
   const clearTtsTimer = useCallback(() => {
     if (ttsTimerRef.current !== null) {
       window.clearTimeout(ttsTimerRef.current);
@@ -118,7 +159,8 @@ export const CriticalFireOverlay: React.FC = () => {
     ttsQueueRef.current = [];
     ttsPlayingRef.current = false;
     ttsSessionRef.current = null;
-  }, [clearTtsTimer, stopCurrentAudio]);
+    releaseTtsOwner();
+  }, [clearTtsTimer, releaseTtsOwner, stopCurrentAudio]);
 
   const playPiperTts = useCallback(
     async (text: string, stillRelevant: () => boolean) => {
@@ -223,6 +265,7 @@ export const CriticalFireOverlay: React.FC = () => {
 
   const playNextTts = useCallback(async () => {
     if (ttsPlayingRef.current) return;
+    if (!claimTtsOwner()) return;
     sanitizeTtsQueue();
 
     const message = ttsQueueRef.current.shift();
@@ -266,7 +309,8 @@ export const CriticalFireOverlay: React.FC = () => {
 
   const scheduleTtsRepeat = useCallback(() => {
     clearTtsTimer();
-    const delayMs = ttsSettings?.ttsRepeatDelayMs ?? (Math.max(0.1, TTS_REPEAT_DELAY_SECONDS) * 1000);
+    if (!ttsSettings) return;
+    const delayMs = ttsSettings.ttsRepeatDelayMs;
     ttsTimerRef.current = window.setTimeout(() => {
       const snapshot = getTtsSnapshot();
       const session = ttsSessionRef.current;
@@ -275,19 +319,19 @@ export const CriticalFireOverlay: React.FC = () => {
         return;
       }
 
-      if (ttsSettings?.ttsFireRepeatEnabled ?? true) {
+      if (ttsSettings.ttsFireRepeatEnabled) {
         enqueueTts({
           type: 'fire-repeat',
-          text: renderTtsTemplate(ttsSettings?.ttsFireRepeatMessage || `Cảnh báo cháy tại {areaName}.`, session, snapshot),
+          text: renderTtsTemplate(ttsSettings.ttsFireRepeatMessage, session, snapshot),
           alertId: session.alertId,
         });
       }
 
       if (snapshot.personDetected) {
-        if (ttsSettings?.ttsPersonRepeatEnabled ?? true) {
+        if (ttsSettings.ttsPersonRepeatEnabled) {
           enqueueTts({
             type: 'person-repeat',
-            text: renderTtsTemplate(ttsSettings?.ttsPersonRepeatMessage || `Phát hiện {personCount} người tại {areaName}.`, session, snapshot),
+            text: renderTtsTemplate(ttsSettings.ttsPersonRepeatMessage, session, snapshot),
             alertId: session.alertId,
           });
         }
@@ -298,6 +342,11 @@ export const CriticalFireOverlay: React.FC = () => {
   scheduleRepeatRef.current = scheduleTtsRepeat;
 
   useEffect(() => {
+    if (!ttsSettings) {
+      stopTtsCompletely();
+      return;
+    }
+
     const snapshot = getTtsSnapshot();
     const previous = ttsSnapshotRef.current;
     const previousSession = ttsSessionRef.current;
@@ -318,12 +367,11 @@ export const CriticalFireOverlay: React.FC = () => {
           fireWasActive: true,
         };
         const session = ttsSessionRef.current;
-        if (ttsSettings?.ttsInitialEnabled ?? true) {
-          const rawMessage = ttsSettings?.ttsInitialMessage || `Chú ý, chú ý. Cảnh báo cháy tại {areaName}.`;
-          const fireMessage = renderTtsTemplate(rawMessage, session, snapshot);
-          const repeatCount = ttsSettings?.ttsInitialRepeatCount ?? 2;
-          const fullMessage = Array(repeatCount).fill(fireMessage).join(' ');
-          enqueueTts({ type: 'fire-initial', text: fullMessage, alertId: session.alertId }, true);
+        if (ttsSettings.ttsInitialEnabled) {
+          const fireMessage = renderTtsTemplate(ttsSettings.ttsInitialMessage, session, snapshot);
+          for (let index = 0; index < ttsSettings.ttsInitialRepeatCount; index += 1) {
+            enqueueTts({ type: 'fire-initial', text: fireMessage, alertId: session.alertId }, true);
+          }
         }
         return;
       }
@@ -333,10 +381,10 @@ export const CriticalFireOverlay: React.FC = () => {
     }
 
     if (snapshot.fireActive && !previous.personDetected && snapshot.personDetected && ttsSessionRef.current) {
-      if (ttsSettings?.ttsPersonDetectedEnabled ?? true) {
+      if (ttsSettings.ttsPersonDetectedEnabled) {
         enqueueTts({
           type: 'person-detected',
-          text: renderTtsTemplate(ttsSettings?.ttsPersonDetectedMessage || `Phát hiện {personCount} người tại {areaName}.`, ttsSessionRef.current, snapshot),
+          text: renderTtsTemplate(ttsSettings.ttsPersonDetectedMessage, ttsSessionRef.current, snapshot),
           alertId: ttsSessionRef.current.alertId,
         });
       }

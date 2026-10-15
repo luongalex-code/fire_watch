@@ -34,8 +34,10 @@ export interface SensorReading {
   humidityPercent: number | null; // DHT22 GPIO3
   flameAdc: number | null; // Flame GPIO6 ADC1_CH5 (0 - 4095 raw, inverse: lower is stronger flame)
   mq2Adc: number | null; // MQ-2 GPIO5 ADC1_CH4 (0 - 4095 raw smoke/gas)
+  mq2SmokeDetected?: boolean | null; // firmware MQ-2 smoke/gas threshold state
   flameFireDetected: boolean; // firmware logic: flameAdc < 2500 in 3 consecutive cycles
   pumpRelayState?: boolean | null; // ESP32 reported relay output state only, not water-flow proof
+  fanState?: boolean | null;
   buzzerState?: boolean | null;
   ledState?: boolean | null;
   operatingMode?: string | null;
@@ -60,11 +62,15 @@ export interface AlertEvent {
   id: string;
   code: string; // e.g. #EV-8041
   timestamp: string;
+  startedAtMs?: number;
+  lastDetectedAtMs?: number;
+  conditionClearedAtMs?: number;
   areaId: AreaId;
   areaName: string;
   source: AlertSource;
   sourceDescription: string;
   severity: AlertSeverity;
+  backendSeverity?: string;
   status: AlertStatus;
   isActive: boolean;
   conditionStatus: AlertConditionStatus;
@@ -117,6 +123,9 @@ export interface AuditLog {
   level: LogLevel;
   message: string;
   device?: string;
+  deviceName?: string;
+  areaName?: string;
+  entityId?: string;
   operator?: string;
   details?: Record<string, unknown>;
 }
@@ -129,6 +138,8 @@ export interface SystemSettings {
   aiCooldownSeconds: number; // e.g. 15
   flameTriggerThresholdAdc: number; // 2500 (lower means trigger)
   flameClearThresholdAdc: number; // 3000
+  mq2SmokeOnThresholdAdc: number; // MQ-2 fan ON threshold, 0 - 4095 ADC
+  mq2SmokeOffThresholdAdc: number; // MQ-2 fan OFF threshold, lower than ON threshold
   dhtSamplingPeriodMs: number;
   pumpStartDelayMs: number;
   pumpStopDelayMs: number;
@@ -170,4 +181,3 @@ export interface DemoScenario {
   description: string;
   badgeColor: string;
 }
-
