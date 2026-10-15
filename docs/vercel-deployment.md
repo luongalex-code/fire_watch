@@ -36,11 +36,13 @@ Chọn Config, Production. Chỉ thêm Preview nếu có cấu hình CORS cho đ
 | Root Directory | `fe` |
 | Framework | Vite |
 | Install Command | `npm ci` |
-| Build Command | `node scripts/check-deployment-env.mjs && npm run build` |
+| Build Command | `npm run build` |
 | Output Directory | `dist` |
 | Node.js | 22.x hoặc 24.x |
 
-File `fe/vercel.json` có rewrite về `index.html` cho React Router. Build Vercel kiểm tra định dạng URL, cho phép camera loopback HTTP cổng 8090 theo lựa chọn của người dùng, nhưng vẫn yêu cầu backend HTTPS công khai. Khi chưa có URL backend, build chủ động dừng; không coi frontend gọi localhost là bản triển khai thành công. Đổi biến cần Redeploy. Build local/Docker vẫn dùng `npm run build` như trước.
+File `fe/vercel.json` có rewrite về `index.html` cho React Router. FE có thể build và deploy riêng khi chưa có URL backend. Build thành công chỉ xác nhận tạo được giao diện; đăng nhập và dữ liệu cần backend truy cập được từ trình duyệt. Khi thiếu biến, frontend vẫn dùng địa chỉ local mặc định trong source; từ thiết bị khác các địa chỉ đó không trỏ về máy chạy backend. Đổi biến cần Redeploy. Build local/Docker vẫn dùng `npm run build` như trước.
+
+Nếu dashboard Vercel đang lưu Build Command cũ `node scripts/check-deployment-env.mjs && npm run build`, đổi thành `npm run build` hoặc tắt override để dùng file cấu hình. Kiểm tra URL vẫn có thể chạy riêng khi đã có URL backend thật: `node scripts/check-deployment-env.mjs`. Đây là bước tùy chọn, không còn chặn deploy FE.
 
 ## Bảo vệ backend trước khi mở mạng
 

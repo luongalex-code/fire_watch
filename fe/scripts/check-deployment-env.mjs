@@ -1,4 +1,5 @@
-// Only the Vercel build command invokes this check; local/Docker builds stay unchanged.
+// Optional manual check before connecting the deployed frontend to a public backend.
+// Run: node scripts/check-deployment-env.mjs. This does not gate frontend builds.
 import { loadEnv } from 'vite';
 
 const env = { ...loadEnv('production', process.cwd(), 'VITE_'), ...process.env };
